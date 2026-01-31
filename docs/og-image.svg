@@ -1,0 +1,20 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0b"/>
+      <stop offset="50%" style="stop-color:#111113"/>
+      <stop offset="100%" style="stop-color:#0a0a0b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4aa"/>
+      <stop offset="100%" style="stop-color:#00b4d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <text x="600" y="200" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="90" font-weight="800" fill="url(#accent)">🛡️ ACP</text>
+  <text x="600" y="300" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="44" font-weight="600" fill="#e0e0e0">2FA for AI Agents</text>
+  <text x="600" y="370" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="26" fill="#888888">One command. Any agent. Unbypassable.</text>
+  <rect x="380" y="420" width="440" height="50" rx="8" fill="#1a1a1d" stroke="#00d4aa" stroke-width="1"/>
+  <text x="600" y="453" text-anchor="middle" font-family="monospace" font-size="22" fill="#00d4aa">npm install -g agent-2fa</text>
+  <text x="600" y="550" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="20" fill="#555555">agent2fa.dev</text>
+</svg>
