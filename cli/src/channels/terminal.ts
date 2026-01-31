@@ -162,9 +162,12 @@ export class TelegramChannelStub implements ChannelAdapter {
         throw new Error(`Telegram API error: ${response.status}`);
       }
 
+      const sendResult = await response.json() as { ok: boolean; result?: { message_id: number } };
+      const messageId = sendResult.result?.message_id;
+
       // Poll for callback response
       console.log('  📱 Consent request sent to Telegram. Waiting for response...');
-      return await this.waitForCallback(request.id);
+      return await this.waitForCallback(request.id, messageId);
     } catch (err) {
       console.error(`  ❌ Telegram error: ${(err as Error).message}`);
       // Fallback to terminal
@@ -177,13 +180,13 @@ export class TelegramChannelStub implements ChannelAdapter {
   /**
    * Poll Telegram for callback query responses.
    */
-  private async waitForCallback(requestId: string, timeoutMs = 120000): Promise<ConsentDecision> {
+  private async waitForCallback(requestId: string, messageId?: number, timeoutMs = 120000): Promise<ConsentDecision> {
     const startTime = Date.now();
     let lastUpdateId = 0;
 
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const url = `https://api.telegram.org/bot${this.botToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=5`;
+        const url = `https://api.telegram.org/bot${this.botToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=2`;
         const response = await fetch(url);
         const data = await response.json() as {
           ok: boolean;
@@ -200,35 +203,47 @@ export class TelegramChannelStub implements ChannelAdapter {
           for (const update of data.result) {
             lastUpdateId = update.update_id;
 
-            if (update.callback_query?.data === `acp_approve_${requestId}`) {
-              // Answer the callback
-              await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  callback_query_id: update.callback_query.id,
-                  text: '✅ Approved',
-                }),
-              });
-              return { approved: true };
-            }
+            const isApprove = update.callback_query?.data === `acp_approve_${requestId}`;
+            const isDeny = update.callback_query?.data === `acp_deny_${requestId}`;
 
-            if (update.callback_query?.data === `acp_deny_${requestId}`) {
+            if ((isApprove || isDeny) && update.callback_query) {
+              // Answer the callback immediately
               await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   callback_query_id: update.callback_query.id,
-                  text: '❌ Denied',
+                  text: isApprove ? '✅ Approved' : '❌ Denied',
                 }),
               });
+
+              // Edit the original message to show the result (remove buttons)
+              if (messageId) {
+                const statusText = isApprove
+                  ? '✅ *APPROVED*'
+                  : '❌ *DENIED*';
+                await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: this.chatId,
+                    message_id: messageId,
+                    text: `🔐 *ACP Consent Request*\n\n${statusText}\n\n_Decision recorded\\._`,
+                    parse_mode: 'Markdown',
+                  }),
+                }).catch(() => {});  // Best-effort edit
+              }
+
+              if (isApprove) {
+                return { approved: true };
+              }
               return { approved: false, reason: 'Denied via Telegram' };
             }
           }
         }
       } catch {
         // Retry on transient errors
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 
