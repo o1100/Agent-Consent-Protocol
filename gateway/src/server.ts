@@ -292,7 +292,7 @@ export function createGatewayServer(config: GatewayConfig) {
    * Check the status of a consent request.
    */
   app.get('/api/v1/consent/:id', authenticate, (req: Request, res: Response): void => {
-    const stored = store.get(req.params.id);
+    const stored = store.get(req.params.id as string);
 
     if (!stored) {
       res.status(404).json({ error: 'Not Found', message: 'Consent request not found' });
@@ -322,7 +322,7 @@ export function createGatewayServer(config: GatewayConfig) {
    */
   app.post('/api/v1/consent/:id/respond', authenticate, (req: Request, res: Response): void => {
     try {
-      const stored = store.get(req.params.id);
+      const stored = store.get(req.params.id as string);
 
       if (!stored) {
         res.status(404).json({ error: 'Not Found', message: 'Consent request not found' });
@@ -443,7 +443,7 @@ export function createGatewayServer(config: GatewayConfig) {
    * Get the cryptographic proof for an approved consent request.
    */
   app.get('/api/v1/consent/:id/proof', authenticate, (req: Request, res: Response): void => {
-    const stored = store.get(req.params.id);
+    const stored = store.get(req.params.id as string);
 
     if (!stored) {
       res.status(404).json({ error: 'Not Found' });

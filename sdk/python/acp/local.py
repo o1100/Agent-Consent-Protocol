@@ -1,8 +1,8 @@
 """
-ACP Local Handler — Terminal-based consent prompts.
+ACP — Local Terminal Consent Handler (Tier 1)
 
-Zero dependencies. Uses rich formatting if available, falls back to plain text.
-This is the default handler when no gateway or Telegram token is configured.
+Zero dependencies. Pure Python stdlib. Works out of the box.
+Shows a formatted prompt in the terminal and reads y/n from stdin.
 """
 
 from __future__ import annotations
@@ -12,17 +12,40 @@ import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .types import ConsentRequest, ConsentResponse
+    from .types import ConsentRequest
 
-# Risk level display
-RISK_DISPLAY = {
-    "low": ("LOW", "🟢"),
-    "medium": ("MEDIUM", "🟡"),
-    "high": ("HIGH", "🔴"),
-    "critical": ("CRITICAL", "⛔"),
+from .types import ConsentDecision, ConsentResponse
+
+# ─── ANSI colors (fallback-safe) ─────────────────────────────────
+
+def _supports_color() -> bool:
+    """Check if the terminal supports ANSI colors."""
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return False
+    return True
+
+
+_COLOR = _supports_color()
+
+def _c(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _COLOR else text
+
+def _bold(t: str) -> str: return _c("1", t)
+def _red(t: str) -> str: return _c("91", t)
+def _yellow(t: str) -> str: return _c("93", t)
+def _green(t: str) -> str: return _c("92", t)
+def _cyan(t: str) -> str: return _c("96", t)
+def _dim(t: str) -> str: return _c("2", t)
+
+
+RISK_STYLE = {
+    "low": ("🟢", _green),
+    "medium": ("🟡", _yellow),
+    "high": ("🔴", _red),
+    "critical": ("⛔", _red),
 }
 
-CATEGORY_DISPLAY = {
+CATEGORY_EMOJI = {
     "communication": "💬",
     "financial": "💰",
     "data": "📊",
@@ -33,139 +56,87 @@ CATEGORY_DISPLAY = {
 }
 
 
-def _try_rich_prompt(request: "ConsentRequest") -> "ConsentResponse | None":
-    """Try to use rich library for a prettier prompt. Returns None if rich isn't available."""
+def prompt_local(request: "ConsentRequest") -> ConsentResponse:
+    """
+    Display a consent request in the terminal and prompt for approval.
+
+    This is the Tier 1 handler — works with zero dependencies,
+    zero configuration. Just a decorated function and a terminal.
+    """
+    action = request.action
+    risk = action.risk_level.value
+    category = action.category.value
+
+    emoji, style_fn = RISK_STYLE.get(risk, ("❓", lambda t: t))
+    cat_emoji = CATEGORY_EMOJI.get(category, "❓")
+
+    # Format parameters nicely
+    params_str = json.dumps(action.parameters, indent=2, default=str)
+    if len(params_str) > 800:
+        params_str = params_str[:797] + "..."
+
+    # Build the prompt
+    lines = [
+        "",
+        _bold("═" * 56),
+        _bold("  🤖 AGENT CONSENT REQUEST"),
+        _bold("═" * 56),
+        f"  {_bold('Action:')}   {_cyan(action.tool)}",
+        f"  {_bold('Risk:')}     {emoji} {style_fn(risk.upper())}",
+        f"  {_bold('Category:')} {cat_emoji} {category}",
+    ]
+
+    if request.agent.name:
+        lines.append(f"  {_bold('Agent:')}    {request.agent.name}")
+
+    lines.append("─" * 56)
+
+    if action.description:
+        lines.append(f"  {action.description}")
+        lines.append("─" * 56)
+
+    lines.append(_dim("  Parameters:"))
+    for param_line in params_str.split("\n"):
+        lines.append(f"    {param_line}")
+
+    if action.estimated_impact:
+        lines.append("─" * 56)
+        lines.append(f"  {_bold('Impact:')} {action.estimated_impact}")
+
+    if request.context and request.context.conversation_summary:
+        lines.append("─" * 56)
+        lines.append(f"  {_bold('Context:')} {request.context.conversation_summary}")
+
+    lines.append(_bold("═" * 56))
+
+    # Print it
+    print("\n".join(lines), file=sys.stderr)
+
+    # Prompt
     try:
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.prompt import Confirm
-    except ImportError:
-        return None
+        answer = input(f"\n  {_bold('Approve?')} [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print(file=sys.stderr)
+        answer = ""
 
-    from .types import ConsentResponse, ConsentDecision
-
-    console = Console()
-
-    risk = request.action.risk_level.value
-    risk_label, risk_emoji = RISK_DISPLAY.get(risk, (risk.upper(), "❓"))
-    cat_emoji = CATEGORY_DISPLAY.get(request.action.category.value, "❓")
-
-    # Build info table
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Key", style="bold cyan")
-    table.add_column("Value")
-
-    table.add_row("Agent", request.agent.name or request.agent.id)
-    table.add_row("Action", f"[bold]{request.action.tool}[/bold]")
-    table.add_row("Risk", f"{risk_emoji} [bold]{risk_label}[/bold]")
-    table.add_row("Category", f"{cat_emoji} {request.action.category.value}")
-    table.add_row("Description", request.action.description)
-
-    if request.action.parameters:
-        params_str = json.dumps(request.action.parameters, indent=2)
-        table.add_row("Parameters", params_str)
-
-    if request.action.estimated_impact:
-        table.add_row("Impact", f"[yellow]{request.action.estimated_impact}[/yellow]")
-
-    if request.context and request.context.conversation_summary:
-        table.add_row("Context", request.context.conversation_summary)
-
-    # Determine panel style based on risk
-    style = {"low": "green", "medium": "yellow", "high": "red", "critical": "bold red"}
-    panel_style = style.get(risk, "white")
-
-    console.print()
-    console.print(Panel(
-        table,
-        title="🤖 Agent Consent Request",
-        subtitle=f"ID: {request.id}",
-        border_style=panel_style,
-    ))
-
-    approved = Confirm.ask("\n  [bold]Approve this action?[/bold]", default=False)
-
-    decision = ConsentDecision.APPROVED if approved else ConsentDecision.DENIED
-    return ConsentResponse(
-        request_id=request.id,
-        decision=decision,
-        approver_id="local_user",
-        channel="terminal_rich",
-    )
-
-
-def _plain_prompt(request: "ConsentRequest") -> "ConsentResponse":
-    """Plain-text terminal prompt. Zero dependencies."""
-    from .types import ConsentResponse, ConsentDecision
-
-    risk = request.action.risk_level.value
-    risk_label, risk_emoji = RISK_DISPLAY.get(risk, (risk.upper(), "?"))
-    cat_emoji = CATEGORY_DISPLAY.get(request.action.category.value, "?")
-
-    print()
-    print("=" * 60)
-    print("  🤖 AGENT CONSENT REQUEST")
-    print("=" * 60)
-    print(f"  Agent:       {request.agent.name or request.agent.id}")
-    print(f"  Action:      {request.action.tool}")
-    print(f"  Risk:        {risk_emoji} {risk_label}")
-    print(f"  Category:    {cat_emoji} {request.action.category.value}")
-    print("-" * 60)
-    print(f"  Description: {request.action.description}")
-    print("-" * 60)
-
-    if request.action.parameters:
-        params_str = json.dumps(request.action.parameters, indent=2)
-        indented = "\n".join(f"  {line}" for line in params_str.split("\n"))
-        print("  Parameters:")
-        print(indented)
-
-    if request.action.estimated_impact:
-        print(f"  Impact:      {request.action.estimated_impact}")
-
-    if request.context and request.context.conversation_summary:
-        print(f"  Context:     {request.context.conversation_summary}")
-
-    print("=" * 60)
-
-    while True:
-        try:
-            answer = input("\n  [A]pprove or [D]eny? ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print("\n  → Denied (no input)")
-            answer = "d"
-
-        if answer in ("a", "approve", "y", "yes"):
-            print("\n  → ✅ Approved\n")
-            decision = ConsentDecision.APPROVED
-            break
-        elif answer in ("d", "deny", "n", "no"):
-            print("\n  → ❌ Denied\n")
-            decision = ConsentDecision.DENIED
-            break
-        else:
-            print("  Please enter 'A' to approve or 'D' to deny.")
-
-    return ConsentResponse(
-        request_id=request.id,
-        decision=decision,
-        approver_id="local_user",
-        channel="terminal",
-    )
-
-
-def prompt_local(request: "ConsentRequest") -> "ConsentResponse":
-    """
-    Prompt the user for consent in the terminal.
-
-    Uses rich formatting if the `rich` library is available,
-    otherwise falls back to plain text. Works in any terminal.
-    """
-    # Only try rich if stdout is a TTY
-    if sys.stdout.isatty():
-        result = _try_rich_prompt(request)
-        if result is not None:
-            return result
-
-    return _plain_prompt(request)
+    if answer in ("y", "yes"):
+        print(f"\n  {_green('✅ Approved')}\n", file=sys.stderr)
+        return ConsentResponse(
+            request_id=request.id,
+            decision=ConsentDecision.APPROVED,
+            approver_id="local_user",
+            channel="terminal",
+            reason="Approved via terminal",
+        )
+    else:
+        reason = ""
+        if answer not in ("n", "no", ""):
+            reason = answer  # Treat non-y/n input as a denial reason
+        print(f"\n  {_red('❌ Denied')}\n", file=sys.stderr)
+        return ConsentResponse(
+            request_id=request.id,
+            decision=ConsentDecision.DENIED,
+            approver_id="local_user",
+            channel="terminal",
+            reason=reason or "Denied via terminal",
+        )

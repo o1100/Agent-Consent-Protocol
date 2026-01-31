@@ -1,23 +1,17 @@
-# ACP Python SDK
+# acp-sdk
 
-**2FA for AI Agents** — Add human consent to any AI agent in 2 lines of code.
+**2FA for AI Agents.** Add human approval to any Python function in 3 lines.
+
+```bash
+pip install acp-sdk
+```
 
 ```python
 from acp import requires_consent
 
 @requires_consent("high")
-def send_email(to, body):
+def send_email(to, subject, body):
     ...
 ```
 
-## Install
-
-```bash
-pip install acp-sdk              # Zero deps (local terminal prompt)
-pip install acp-sdk[remote]      # + requests (Telegram/Gateway mode)
-pip install acp-sdk[all]         # + rich + cryptography
-```
-
-## Documentation
-
-See the [main README](../../README.md) and [integration guide](../../docs/integration-guide.md).
+Zero dependencies. Zero config. [Full documentation →](https://github.com/agent-consent-protocol/acp)

@@ -1,83 +1,49 @@
 """
-ACP Basic Usage — The simplest possible example.
+ACP — Basic Usage
 
-Run: python basic_usage.py
-
-No config, no server, no dependencies. Just a terminal prompt.
+The simplest possible integration. No server, no config, no dependencies.
+Just a decorator and a terminal prompt.
 """
 
-from acp import requires_consent, ACPClient, ConsentDeniedError
+from acp import requires_consent, ConsentDeniedError
 
-# ─── Example 1: Decorator (simplest) ────────────────────────────────
 
+# ─── That's it. This function now requires human approval. ────────
 
 @requires_consent("high")
-def send_email(to: str, subject: str, body: str):
-    """Send an email to someone."""
-    print(f"📧 Email sent to {to}: {subject}")
+def send_email(to: str, subject: str, body: str) -> dict:
+    """Send an email to the specified recipient."""
+    print(f"📧 Sending email to {to}: {subject}")
     return {"status": "sent", "to": to}
 
 
-@requires_consent("critical")
-def transfer_money(to_account: str, amount: float, currency: str = "USD"):
-    """Transfer money to an external account."""
-    print(f"💰 Transferred {currency} {amount} to {to_account}")
+@requires_consent("critical", category="financial")
+def transfer_money(amount: float, to_account: str) -> dict:
+    """Transfer funds to another account."""
+    print(f"💰 Transferring ${amount} to {to_account}")
     return {"status": "completed", "amount": amount}
 
 
 @requires_consent  # defaults to "medium" risk
-def delete_file(path: str):
-    """Delete a file from the filesystem."""
-    print(f"🗑️  Deleted {path}")
+def write_report(title: str, content: str) -> dict:
+    """Write a report to disk."""
+    print(f"📝 Writing report: {title}")
+    return {"status": "written", "title": title}
 
 
-# ─── Example 2: Client (more control) ───────────────────────────────
-
-
-def example_with_client():
-    client = ACPClient(agent_id="my-agent", agent_name="My AI Assistant")
-
-    response = client.request_consent(
-        tool="send_tweet",
-        description="Post a tweet about the product launch",
-        parameters={"text": "We just shipped v2.0! 🚀"},
-        risk_level="high",
-        category="public",
-        estimated_impact="Visible to 50K+ followers",
-    )
-
-    if response.approved:
-        print("✅ Tweet approved! Posting...")
-    else:
-        print(f"❌ Tweet denied: {response.reason}")
-
-
-# ─── Run Examples ────────────────────────────────────────────────────
+# ─── Usage ────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  ACP Basic Usage Examples")
-    print("=" * 60)
+    print("ACP Basic Usage — Terminal Consent\n")
 
-    # Example 1: Decorator
-    print("\n--- Example 1: @requires_consent decorator ---\n")
     try:
-        result = send_email(
-            to="team@company.com",
-            subject="Q3 Report",
-            body="Please find attached the quarterly report.",
-        )
-        print(f"Result: {result}")
-    except ConsentDeniedError as e:
-        print(f"Action blocked: {e}")
+        result = send_email("boss@company.com", "Weekly Report", "All good.")
+        print(f"Result: {result}\n")
+    except ConsentDeniedError:
+        print("Email was denied by the human.\n")
 
-    # Example 2: Client
-    print("\n--- Example 2: ACPClient ---\n")
-    example_with_client()
-
-    # Example 3: Critical action
-    print("\n--- Example 3: Critical action ---\n")
     try:
-        transfer_money(to_account="IBAN-DE89370400440532013000", amount=10000)
-    except ConsentDeniedError as e:
-        print(f"Transfer blocked: {e}")
+        result = transfer_money(500.00, "ACCT-12345")
+        print(f"Result: {result}\n")
+    except ConsentDeniedError:
+        print("Transfer was denied by the human.\n")

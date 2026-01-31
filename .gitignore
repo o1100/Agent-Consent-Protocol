@@ -2,26 +2,27 @@
 node_modules/
 __pycache__/
 *.pyc
+.pytest_cache/
 *.egg-info/
 dist/
 build/
-.eggs/
+
+# Data (generated at runtime)
+data/
+*.db
+*.jsonl
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Runtime
-*.db
-*.jsonl
-.env
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Build artifacts
-*.js.map
-*.d.ts.map
+# Environment
+.env
+.env.local

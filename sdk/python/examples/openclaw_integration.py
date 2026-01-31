@@ -1,113 +1,59 @@
 """
-ACP + OpenClaw Integration Example
+ACP + OpenClaw Integration
 
-Shows how an OpenClaw agent can use ACP to get human consent
-before performing consequential actions.
+An OpenClaw agent using ACP for consent. To get Telegram approvals,
+just set two env vars before running:
 
-The agent runs on a VM; the human approves via Telegram.
+    export ACP_TELEGRAM_TOKEN="your-bot-token"
+    export ACP_TELEGRAM_CHAT_ID="your-chat-id"
+    python openclaw_integration.py
+
+Without those env vars, falls back to terminal prompts.
 """
 
-import asyncio
-from acp import ACPClient, requires_consent, ConsentDenied, ConsentTimeout
+from acp import requires_consent, ConsentDeniedError
 
 
-# ─── Initialize ACP ──────────────────────────────────────────────
-
-client = ACPClient(
-    gateway_url="http://localhost:3000",  # ACP Gateway
-    agent_id="clawd_main",
-    agent_name="Clawd",
-    agent_framework="openclaw",
-    session_id="session_001",
-)
-
-
-# ─── Protected Tools ─────────────────────────────────────────────
-
-@requires_consent(client, category="public", risk_level="high",
+@requires_consent("high", category="public",
                   estimated_impact="Visible to all followers")
-async def send_tweet(text: str, media_urls: list[str] | None = None) -> dict:
+def send_tweet(text: str) -> dict:
     """Post a tweet to the configured Twitter account."""
     print(f"🐦 Tweeting: {text}")
     return {"tweet_id": "12345", "url": "https://twitter.com/..."}
 
 
-@requires_consent(client, category="communication", risk_level="high")
-async def send_email(to: str, subject: str, body: str) -> dict:
+@requires_consent("high")
+def send_email(to: str, subject: str, body: str) -> dict:
     """Send an email."""
-    print(f"📧 Sending email to {to}: {subject}")
-    return {"status": "sent", "message_id": "msg_001"}
+    print(f"📧 Sending to {to}: {subject}")
+    return {"status": "sent"}
 
 
-@requires_consent(client, category="system", risk_level="high")
-async def execute_shell(command: str) -> dict:
+@requires_consent("high")
+def execute_shell(command: str) -> dict:
     """Execute a shell command."""
     import subprocess
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.returncode,
-    }
+    return {"stdout": result.stdout, "exit_code": result.returncode}
 
 
-@requires_consent(client, category="financial", risk_level="critical",
-                  description="Purchase items with company credit card")
-async def make_purchase(item: str, amount: float, vendor: str) -> dict:
-    """Make a purchase."""
+@requires_consent("critical", category="financial")
+def make_purchase(item: str, amount: float, vendor: str) -> dict:
+    """Purchase with company credit card."""
     print(f"💳 Purchasing {item} from {vendor} for ${amount}")
-    return {"order_id": "ORD-001", "amount": amount}
-
-
-# ─── Agent Workflow ───────────────────────────────────────────────
-
-async def agent_workflow():
-    """
-    Simulates an OpenClaw agent performing various actions.
-    Each consequential action requires human consent via Telegram.
-    """
-    print("🤖 Clawd Agent — ACP Demo")
-    print("=" * 50)
-    print()
-
-    # Scenario 1: Tweet about a product launch
-    print("📋 Scenario 1: Post a tweet")
-    try:
-        result = await send_tweet(
-            text="Just shipped v2.0 of our product! 🚀 Check it out at example.com"
-        )
-        print(f"   ✅ Tweet posted: {result}")
-    except ConsentDenied as e:
-        print(f"   ❌ Tweet denied: {e.reason}")
-    except ConsentTimeout:
-        print("   ⏰ No response — tweet not posted")
-
-    print()
-
-    # Scenario 2: Send an email to a client
-    print("📋 Scenario 2: Send client email")
-    try:
-        result = await send_email(
-            to="client@example.com",
-            subject="Weekly Status Update",
-            body="All milestones are on track for the Q3 deadline.",
-        )
-        print(f"   ✅ Email sent: {result}")
-    except ConsentDenied as e:
-        print(f"   ❌ Email denied: {e.reason}")
-
-    print()
-
-    # Scenario 3: Deploy to production
-    print("📋 Scenario 3: Shell command")
-    try:
-        result = await execute_shell(command="echo 'Hello from ACP!'")
-        print(f"   ✅ Command executed: {result}")
-    except ConsentDenied as e:
-        print(f"   ❌ Command denied: {e.reason}")
-
-    await client.close()
+    return {"order_id": "ORD-001"}
 
 
 if __name__ == "__main__":
-    asyncio.run(agent_workflow())
+    print("🤖 Clawd Agent — ACP Demo\n")
+
+    for action in [
+        lambda: send_tweet("Just shipped v2.0! 🚀"),
+        lambda: send_email("client@co.com", "Status Update", "On track."),
+        lambda: execute_shell("echo 'Hello from ACP!'"),
+    ]:
+        try:
+            result = action()
+            print(f"  ✅ {result}\n")
+        except ConsentDeniedError as e:
+            print(f"  ❌ Denied: {e}\n")

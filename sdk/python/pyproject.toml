@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "acp-sdk"
 version = "0.1.0"
-description = "Agent Consent Protocol — 2FA for AI Agents. Add human approval to any AI agent in 2 lines of code."
+description = "Agent Consent Protocol — 2FA for AI Agents. Add human approval to any AI agent action in 3 lines of code. Zero dependencies."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
@@ -28,18 +28,19 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# ZERO required dependencies for local mode!
+# ZERO required dependencies for Tier 1 (local terminal prompt).
+# The entire SDK works with just the Python standard library.
 dependencies = []
 
 [project.optional-dependencies]
-# Remote mode (Telegram + Gateway)
+# Tier 2+3: Telegram and Gateway mode (only adds `requests`)
 remote = ["requests>=2.28.0"]
-# Pretty terminal output
-rich = ["rich>=13.0.0"]
-# Full crypto verification
+# Tier 3: Cryptographic proof verification
 crypto = ["cryptography>=41.0.0"]
 # Everything
-all = ["requests>=2.28.0", "rich>=13.0.0", "cryptography>=41.0.0"]
+all = ["requests>=2.28.0", "cryptography>=41.0.0"]
+# Dev tools
+dev = ["pytest>=8.0", "ruff>=0.5.0"]
 
 [project.urls]
 Homepage = "https://github.com/agent-consent-protocol/acp"

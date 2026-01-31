@@ -1,76 +1,44 @@
 """
-ACP + LangChain Integration Example
+ACP + LangChain Integration
 
-Shows how to wrap LangChain tools with ACP consent.
-Requires: pip install acp-sdk[langchain] langchain-openai
+Wrap LangChain tools with ACP consent. Works at any tier:
+- Default: terminal prompt
+- ACP_TELEGRAM_TOKEN set: mobile approval
+- ACP_GATEWAY_URL set: full gateway
+
+Requires: pip install langchain-core
 """
 
-import asyncio
-from acp import ACPClient, LangChainACPMiddleware
+from acp.middleware import LangChainACPMiddleware
 
-# Note: This example requires langchain-core to be installed
-# pip install acp-sdk[langchain] langchain-openai
+middleware = LangChainACPMiddleware()  # Uses default client (auto-detects mode)
 
+try:
+    from langchain_core.tools import tool
 
-async def main():
-    # Initialize ACP client
-    client = ACPClient(
-        gateway_url="http://localhost:3000",
-        agent_id="langchain_agent",
-        agent_name="LangChain Agent",
-    )
+    @tool
+    def send_email(to: str, subject: str, body: str) -> str:
+        """Send an email to the specified recipient."""
+        return f"Email sent to {to}: {subject}"
 
-    middleware = LangChainACPMiddleware(client)
+    @tool
+    def search_web(query: str) -> str:
+        """Search the web for information."""
+        return f"Search results for: {query}"
 
-    try:
-        from langchain_core.tools import tool
+    # Wrap with consent — category/risk auto-detected from tool name!
+    protected_email = middleware.wrap_tool(send_email)    # → communication/high
+    protected_search = middleware.wrap_tool(search_web)   # → data/low
 
-        @tool
-        def send_email(to: str, subject: str, body: str) -> str:
-            """Send an email to the specified recipient."""
-            return f"Email sent to {to}: {subject}"
+    # Or override:
+    # protected_email = middleware.wrap_tool(send_email, category="communication", risk_level="critical")
 
-        @tool
-        def search_web(query: str) -> str:
-            """Search the web for information."""
-            return f"Search results for: {query}"
+    print("✅ LangChain tools wrapped with ACP consent")
 
-        @tool
-        def delete_file(path: str) -> str:
-            """Delete a file from the filesystem."""
-            return f"Deleted: {path}"
+    # Use with LangGraph:
+    # from langgraph.prebuilt import create_react_agent
+    # agent = create_react_agent(llm, [protected_email, protected_search])
 
-        # Wrap tools with ACP consent
-        protected_email = middleware.wrap_tool(
-            send_email, category="communication", risk_level="high"
-        )
-        protected_search = middleware.wrap_tool(
-            search_web, category="data", risk_level="low"
-        )
-        protected_delete = middleware.wrap_tool(
-            delete_file, category="data", risk_level="high"
-        )
-
-        # Use with LangGraph or ReAct agent:
-        # from langchain_openai import ChatOpenAI
-        # from langgraph.prebuilt import create_react_agent
-        #
-        # agent = create_react_agent(
-        #     ChatOpenAI(model="gpt-4"),
-        #     [protected_email, protected_search, protected_delete],
-        # )
-
-        print("✅ LangChain tools wrapped with ACP consent")
-        print(f"   - {protected_email.name}: communication/high")
-        print(f"   - {protected_search.name}: data/low")
-        print(f"   - {protected_delete.name}: data/high")
-
-    except ImportError:
-        print("⚠️  LangChain not installed.")
-        print("   Install with: pip install acp-sdk[langchain] langchain-core")
-
-    await client.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+except ImportError:
+    print("Install langchain-core to run this example:")
+    print("  pip install langchain-core")

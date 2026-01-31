@@ -1,24 +1,21 @@
-<p align="center">
-  <h1 align="center">🔐 Agent Consent Protocol</h1>
-  <p align="center"><strong>2FA for AI Agents</strong> — Human authorization before your agent acts</p>
-</p>
+<div align="center">
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://pypi.org/project/acp-sdk/"><img src="https://img.shields.io/badge/pypi-acp--sdk-brightgreen.svg" alt="PyPI"></a>
-  <a href="https://www.npmjs.com/package/@acp/sdk"><img src="https://img.shields.io/badge/npm-%40acp%2Fsdk-red.svg" alt="npm"></a>
-  <a href="SPEC.md"><img src="https://img.shields.io/badge/spec-v0.1.0-orange.svg" alt="Spec"></a>
-</p>
+# 🔐 Agent Consent Protocol (ACP)
 
----
+### 2FA for AI Agents
 
-**The problem:** AI agents can send emails, move money, deploy code, and delete data — but there's no standard way to ensure a human actually approved those actions. Every framework has its own ad-hoc solution (or none at all).
+**Human approval before AI agents take consequential actions.**
 
-**The solution:** ACP is an open protocol that adds cryptographically verifiable human consent to any AI agent, in any framework, with 2 lines of code.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python: 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](sdk/python/)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](#)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+</div>
 
 ---
 
-## ⚡ 30-Second Quickstart
+## Quickstart
 
 ```bash
 pip install acp-sdk
@@ -29,307 +26,273 @@ from acp import requires_consent
 
 @requires_consent("high")
 def send_email(to, subject, body):
-    # ACP prompts the human before this runs
-    send_via_smtp(to, subject, body)
+    # Won't run until a human approves
+    ...
 ```
 
-That's it. When your agent calls `send_email()`, the human sees:
+**That's it.** When `send_email()` is called, the human sees this in their terminal:
 
 ```
-═══════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════
   🤖 AGENT CONSENT REQUEST
-═══════════════════════════════════════════════════════════
-  Agent:       default
-  Action:      send_email
-  Risk:        🔴 HIGH
-  Category:    communication
-──────────────────────────────────────────────────────────
-  Description: Send an email.
-  Parameters:  {"to": "ceo@company.com", ...}
-═══════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════
+  Action:   send_email
+  Risk:     🔴 HIGH
+  Category: 💬 communication
+────────────────────────────────────────────────────────
+  Send an email to the specified recipient
+────────────────────────────────────────────────────────
+  Parameters:
+    {
+      "to": "ceo@company.com",
+      "subject": "Quarterly Report",
+      "body": "Please find attached..."
+    }
+════════════════════════════════════════════════════════
 
-  [A]pprove or [D]eny?
+  Approve? [y/N]
 ```
 
-**No config. No server. No dependencies.** Just a terminal prompt.
+No server. No config. No dependencies. Just a decorator and a prompt.
 
----
+## Why?
 
-## 🏗️ How It Works
+AI agents can now send emails, run shell commands, post tweets, transfer money, and deploy to production. But there's no standard way to make sure a human said "yes" first.
 
-```
-┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│  AI Agent    │         │  ACP Layer   │         │    Human     │
-│              │  call   │              │  ask    │              │
-│  "Send email │───────▶ │  Intercept   │────────▶│  Review      │
-│   to CEO"    │         │  Classify    │         │  Approve ✅  │
-│              │◀─────── │  Verify      │◀────────│  or Deny ❌  │
-│  Proceeds    │ result  │  Audit       │ respond │              │
-└──────────────┘         └──────────────┘         └──────────────┘
-```
+| Without ACP | With ACP |
+|---|---|
+| Agent hallucinates a $10K purchase → 💸 executes | 📱 Human reviews & denies |
+| Prompt injection sends email to CEO → 📧 sends | ✅ Approval prompt first |
+| Agent runs `rm -rf /data` → 💀 gone | 🔒 Blocked until approved |
 
-1. Agent calls a tool → ACP **intercepts** it
-2. Action is **classified** by category and risk level
-3. If approval needed → **prompt** is sent to the human
-4. Human **reviews** action details and decides
-5. If approved → tool executes. If denied → exception raised
-6. Everything is **logged** in an audit trail
+## Progressive Complexity
 
----
+ACP scales from a terminal prompt to a production-grade consent gateway. **You only add complexity when you need it.**
 
-## 📊 Progressive Complexity — Start Simple, Scale Up
-
-### Tier 1: Local Mode (Zero Config)
+### Tier 1 — Local Terminal (zero config)
 
 ```python
 from acp import requires_consent
 
 @requires_consent("high")
-def delete_file(path):
-    os.remove(path)
+def send_email(to, subject, body):
+    ...
 ```
 
-- ✅ Terminal prompt
-- ✅ Zero dependencies
-- ✅ Zero config
-- Best for: development, testing, scripts
+The tool name is auto-classified: `send_email` → communication/high. You can override if you disagree:
 
-### Tier 2: Mobile Approvals (One Env Var)
+```python
+@requires_consent("critical", category="financial")
+def process_payment(amount, recipient):
+    ...
+```
+
+### Tier 2 — Mobile Approval (one env var)
+
+Want approvals on your phone instead of the terminal? Set two env vars:
 
 ```bash
 export ACP_TELEGRAM_TOKEN="your-bot-token"
 export ACP_TELEGRAM_CHAT_ID="your-chat-id"
 ```
 
-Same code. Now approvals go to your phone:
-
-```
-🤖 Agent Consent Request
-━━━━━━━━━━━━━━━━━━━━
-Agent:    My Agent
-Action:   delete_file
-Risk:     🔴 HIGH
-
-[✅ Approve]  [❌ Deny]
-```
-
-- ✅ Mobile approvals via Telegram
-- ✅ No server needed
-- ✅ Same Python code, just add env vars
-- Best for: personal agents, small teams
-
-### Tier 3: Production Gateway (Full Security)
+**Same code. No changes.** Now consent requests appear as Telegram messages with [✅ Approve] and [❌ Deny] buttons.
 
 ```bash
-docker-compose up -d  # Start ACP Gateway
+# Only extra dependency for Telegram/gateway mode:
+pip install acp-sdk[remote]
+```
+
+### Tier 3 — Production Gateway (full security)
+
+For production: Ed25519 cryptographic proofs, hash-chained audit trail, declarative policy engine, SQLite storage.
+
+```bash
+# Single command to start the gateway:
+npx acp-gateway
+
+# Or Docker:
+docker run -p 3000:3000 acp-gateway
+```
+
+Then point your SDK at it:
+
+```bash
 export ACP_GATEWAY_URL="http://localhost:3000"
 ```
 
-- ✅ Ed25519 signed consent proofs
-- ✅ Declarative policy engine
-- ✅ Hash-chained audit trail
-- ✅ Multiple approval channels
-- ✅ Rate limiting, time windows, spending caps
-- Best for: production, enterprise, compliance
+**Same code. Still no changes.** The decorator detects the env var and routes through the gateway automatically.
 
----
+## Built-in Risk Classification
 
-## 🔒 Why Not Just `input("Approve? y/n")`?
+ACP knows what common tools do. You don't have to configure anything:
 
-| Feature | `input()` | LangGraph `interrupt()` | AutoGen | **ACP** |
-|---|---|---|---|---|
-| Works across frameworks | ❌ | ❌ LangGraph only | ❌ AutoGen only | **✅ Any** |
-| Out-of-band approval | ❌ Same process | ❌ Same process | ❌ Same process | **✅ Separate channel** |
-| Mobile/remote approval | ❌ | ❌ | ❌ | **✅ Telegram, webhook** |
-| Cryptographic proofs | ❌ | ❌ | ❌ | **✅ Ed25519** |
-| Policy engine | ❌ | ❌ | ❌ | **✅ Declarative rules** |
-| Audit trail | ❌ | ❌ | ❌ | **✅ Hash-chained** |
-| Risk classification | ❌ | ❌ | ❌ | **✅ Auto-classify** |
-| Rate limiting | ❌ | ❌ | ❌ | **✅ Per-tool, per-session** |
-| Replay prevention | ❌ | ❌ | ❌ | **✅ Nonce-bound** |
-| Zero dependencies | ❌ n/a | ❌ langgraph | ❌ autogen | **✅ stdlib only** |
+| Tool Name | Auto-Classification |
+|---|---|
+| `read_file`, `web_search`, `get_weather` | 🟢 data/low |
+| `write_file`, `create_event`, `git_commit` | 🟡 data/medium |
+| `send_email`, `send_sms` | 🔴 communication/high |
+| `send_tweet`, `publish` | 🔴 public/high |
+| `execute_shell`, `git_push` | 🔴 system/high |
+| `transfer_money`, `deploy_production` | ⛔ financial/critical |
 
----
+Also works with prefixes: anything starting with `read_` → low, `send_` → high, `delete_` → high, `deploy_` → critical.
 
-## 📦 SDKs
+Override when you need to:
 
-### Python
-
-```bash
-pip install acp-sdk              # Zero deps (local mode)
-pip install acp-sdk[remote]      # + requests (Telegram/Gateway)
-pip install acp-sdk[all]         # + rich + cryptography
+```python
+@requires_consent("low")  # I know this is safe
+def send_internal_ping():
+    ...
 ```
 
-### TypeScript / Node.js
+## TypeScript SDK
 
 ```bash
 npm install @acp/sdk
 ```
 
-### Gateway Server
+```typescript
+import { ACPClient } from '@acp/sdk';
+
+const client = new ACPClient({
+  gatewayUrl: 'http://localhost:3000',
+  agentId: 'my_agent',
+});
+
+// Request consent
+const consent = await client.requestConsent({
+  tool: 'send_email',
+  parameters: { to: 'ceo@co.com', subject: 'Report' },
+  description: 'Send quarterly report',
+  riskLevel: 'high',
+});
+
+const response = await consent.waitForDecision();
+
+// Express middleware
+import { requireConsent } from '@acp/sdk';
+
+app.post('/api/deploy',
+  requireConsent(client, { category: 'system', riskLevel: 'critical' }),
+  (req, res) => { /* runs after human approval */ }
+);
+```
+
+## Gateway API
+
+The gateway is a single-command REST server with:
+- **Policy engine** — declarative JSON rules, hot-reloadable
+- **Crypto proofs** — Ed25519 signed, nonce-bound, time-limited
+- **Audit trail** — hash-chained JSONL, tamper-evident
+- **Telegram adapter** — inline button approvals on your phone
+- **Webhook adapter** — integrate with anything
 
 ```bash
-cd gateway && npm install && npm run build && npm start
+# Start with Telegram:
+ACP_TELEGRAM_TOKEN=xxx ACP_TELEGRAM_CHAT_ID=yyy npx acp-gateway
+
+# Or with Docker:
+docker run -p 3000:3000 \
+  -e ACP_TELEGRAM_TOKEN=xxx \
+  -e ACP_TELEGRAM_CHAT_ID=yyy \
+  acp-gateway
 ```
 
----
+### REST Endpoints
 
-## 🧩 Framework Integrations
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/consent/request` | Create consent request |
+| GET | `/api/v1/consent/:id` | Check status |
+| POST | `/api/v1/consent/:id/respond` | Submit human response |
+| GET | `/api/v1/consent/:id/proof` | Get signed proof |
+| GET | `/api/v1/audit` | Query audit trail |
+| GET | `/api/v1/policies` | Get current policy |
+| PUT | `/api/v1/policies` | Update policy |
 
-<details>
-<summary><strong>LangChain / LangGraph</strong></summary>
-
-```python
-from langchain_core.tools import tool
-from acp import ACPClient
-
-client = ACPClient(agent_id="langchain-agent")
-
-@tool
-def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email (requires human approval)."""
-    response = client.request_consent(
-        tool="send_email",
-        description=f"Send email to {to}: {subject}",
-        parameters={"to": to, "subject": subject},
-        risk_level="high",
-    )
-    if not response.approved:
-        return f"Denied: {response.reason}"
-    return actually_send_email(to, subject, body)
-```
-</details>
-
-<details>
-<summary><strong>MCP (Model Context Protocol)</strong></summary>
-
-```typescript
-import { ACPClient, acpWrapMCPTools } from '@acp/sdk';
-
-const client = new ACPClient({ agentId: 'mcp-server' });
-
-const safeTools = acpWrapMCPTools(myTools, {
-  client,
-  toolRiskLevels: { send_email: 'high', read_file: 'low' },
-});
-```
-</details>
-
-<details>
-<summary><strong>Express API</strong></summary>
-
-```typescript
-import { ACPClient, acpExpressMiddleware } from '@acp/sdk';
-
-app.use('/api/dangerous', acpExpressMiddleware({
-  client: new ACPClient({ agentId: 'my-api' }),
-  defaultRiskLevel: 'high',
-}));
-```
-</details>
-
-<details>
-<summary><strong>AutoGen / CrewAI</strong></summary>
-
-See [Integration Guide](docs/integration-guide.md) for full examples.
-</details>
-
----
-
-## 📜 Policy Engine
-
-Define declarative rules for how your agent handles consent:
+### Policy Engine
 
 ```json
 {
   "rules": [
     {
-      "name": "Auto-approve low-risk reads",
-      "match": { "risk_level": ["low"], "category": ["data"] },
+      "name": "Auto-approve reads",
+      "match": { "risk_level": ["low"] },
       "decision": "auto_approve",
       "priority": 10
     },
     {
-      "name": "Block financial actions at night",
-      "match": { "category": ["financial"] },
-      "conditions": { "time_of_day": { "after": "22:00", "before": "07:00" } },
-      "decision": "never_allow",
-      "priority": 90
+      "name": "Always ask for emails",
+      "match": { "category": ["communication"], "risk_level": ["high"] },
+      "decision": "always_ask",
+      "priority": 60
     },
     {
-      "name": "Rate limit emails",
-      "match": { "category": ["communication"] },
+      "name": "Block dangerous commands",
+      "match": { "category": ["system"] },
       "decision": "always_ask",
-      "constraints": { "rate_limit": { "max_actions": 10, "window_seconds": 3600 } },
-      "priority": 50
+      "constraints": { "blocked_patterns": ["rm -rf", "DROP TABLE"] },
+      "priority": 300
     }
   ]
 }
 ```
 
-See example policies: [default.json](examples/policies/default.json) | [strict.json](examples/policies/strict.json)
+## How It Works
 
----
+```
+Tier 1 (Local):     Agent → Decorator → Terminal Prompt → Execute/Block
+Tier 2 (Telegram):  Agent → Decorator → Telegram Bot → Phone → Execute/Block
+Tier 3 (Gateway):   Agent → Decorator → Gateway → Telegram/Webhook → Execute/Block
+                                           ↓
+                                    Policy Engine
+                                    Ed25519 Proofs
+                                    Audit Trail
+```
 
-## 📖 Documentation
+The key insight: **the consent check lives outside the agent's trust boundary.** Even in Tier 1, the prompt goes to stderr and reads from stdin — the agent can't intercept or forge it. In Tier 3, it's a separate process with cryptographic proofs.
 
-| Document | Description |
-|---|---|
-| [SPEC.md](SPEC.md) | Protocol specification |
-| [Architecture](docs/architecture.md) | System design and data flow |
-| [Integration Guide](docs/integration-guide.md) | Framework-specific examples |
-| [Quickstart](examples/quickstart.md) | 3-minute getting started guide |
+## Comparison
 
----
+| Feature | ACP | MCP | LangGraph | AutoGen | CrewAI |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Human approval flow | ✅ | ❌ | ⚠️ | ⚠️ | ⚠️ |
+| Zero-config setup | ✅ | — | ❌ | ❌ | ❌ |
+| Out-of-band channel | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Cryptographic proofs | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Policy engine | ✅ | ❌ | ❌ | ⚠️ | ❌ |
+| Framework-agnostic | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Mobile-friendly | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Audit trail | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Zero dependencies | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-## 🗺️ Roadmap
+## Documentation
 
-- [x] Python SDK (Tier 1 + 2 + 3)
-- [x] TypeScript SDK
-- [x] Gateway server (Express + SQLite)
-- [x] Telegram approval channel
-- [x] Webhook approval channel
-- [x] Policy engine
-- [x] Ed25519 consent proofs
-- [x] Hash-chained audit trail
-- [ ] Web dashboard for approvals
-- [ ] Slack/Discord approval channels
-- [ ] Multi-approver workflows
-- [ ] Go SDK
-- [ ] Rust SDK
-- [ ] OIDC/OAuth integration
-- [ ] MCP server reference implementation
+- [Architecture](docs/architecture.md) — How the pieces fit together
+- [Security Model](docs/security-model.md) — Threat model and design
+- [Integration Guide](docs/integration-guide.md) — Python, TypeScript, LangChain, MCP
+- [Policy Reference](docs/policy-reference.md) — Complete policy configuration
+- [Protocol Spec](SPEC.md) — Full protocol specification
+- [Quickstart](examples/quickstart.md) — Detailed setup guide
 
----
+## Contributing
 
-## 🤝 Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md). We especially need help with:
+- 🔌 Channel adapters (Slack, Discord, Signal, web dashboard)
+- 🌐 SDKs (Go, Rust, Java)
+- 🧪 Testing and security review
 
-We welcome contributions! ACP is designed to be an open standard.
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/amazing`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing`)
-5. Open a Pull Request
-
-### Areas We Need Help
-
-- **More approval channels** — Slack, Discord, WhatsApp, push notifications
-- **More framework integrations** — Haystack, DSPy, Semantic Kernel
-- **Testing** — Unit tests, integration tests, security audits
-- **Documentation** — Tutorials, guides, translations
-
----
-
-## 📄 License
+## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
 
-**The protocol specification (SPEC.md) is freely implementable by anyone.** We want ACP to be a standard, not a product.
-
 ---
 
-<p align="center">
-  <sub>Built because AI agents should ask before they act.</sub>
-</p>
+<div align="center">
+
+**Humans should always have the final say over consequential AI actions.**
+
+⭐ **[Star this repo](https://github.com/agent-consent-protocol/acp)** if you agree.
+
+</div>

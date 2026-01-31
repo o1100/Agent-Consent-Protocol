@@ -1,18 +1,20 @@
 """
 Agent Consent Protocol (ACP) — 2FA for AI Agents.
 
-Add human consent to any AI agent in 2 lines of code:
+Add human consent to any AI agent action in 3 lines:
 
     from acp import requires_consent
 
     @requires_consent("high")
-    def send_email(to, body):
+    def send_email(to, subject, body):
         ...
 
-Three tiers, progressive complexity:
-- Tier 1 (Local): Terminal prompt. Zero dependencies.
-- Tier 2 (Remote): Set ACP_TELEGRAM_TOKEN → mobile approvals.
-- Tier 3 (Production): Full gateway with Ed25519 crypto.
+That's it. Zero config. Works immediately with a terminal prompt.
+
+Progressive complexity:
+  - Tier 1 (default): Terminal prompt. Zero dependencies, zero config.
+  - Tier 2: Set ACP_TELEGRAM_TOKEN env var → mobile approvals via Telegram.
+  - Tier 3: Set ACP_GATEWAY_URL env var → full gateway with crypto & audit.
 """
 
 __version__ = "0.1.0"
@@ -30,13 +32,16 @@ from .types import (
     ConsentStatus,
     RequestContext,
     RiskLevel,
+    classify_tool,
 )
 
 __all__ = [
-    # Core
+    # Core — this is what 90% of users need
     "requires_consent",
-    "ACPClient",
     "ConsentDeniedError",
+    # Advanced
+    "ACPClient",
+    "classify_tool",
     # Types
     "ActionCategory",
     "ActionInfo",

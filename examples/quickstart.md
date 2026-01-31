@@ -1,143 +1,74 @@
-# ACP Quickstart — 3 Minutes to Human-in-the-Loop
+# ACP Quickstart
 
-Get ACP running and protect your first agent action in under 3 minutes.
-
-## Option 1: Docker (Recommended)
-
-```bash
-# Clone the repo
-git clone https://github.com/agent-consent-protocol/acp.git
-cd acp/examples
-
-# Start the gateway
-docker-compose up -d
-
-# Verify it's running
-curl http://localhost:3000/health
-```
-
-## Option 2: From Source
-
-```bash
-# Clone and install
-git clone https://github.com/agent-consent-protocol/acp.git
-cd acp/gateway
-npm install
-npm run build
-
-# Start with default policy
-ACP_POLICY_PATH=../examples/policies/default.json npm start
-```
-
-## Your First Consent Request
-
-### Using curl:
-
-```bash
-# Submit a consent request
-curl -X POST http://localhost:3000/api/v1/consent/request \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_id": "my_agent",
-    "action": {
-      "tool": "send_email",
-      "category": "communication",
-      "risk_level": "high",
-      "parameters": {
-        "to": "boss@company.com",
-        "subject": "Weekly Report",
-        "body": "Here is the weekly report..."
-      },
-      "description": "Send weekly report email"
-    }
-  }'
-
-# Response includes request_id and poll_url
-# {"request_id":"cr_...","status":"pending","poll_url":"/api/v1/consent/cr_..."}
-
-# Approve it (simulating human response)
-curl -X POST http://localhost:3000/api/v1/consent/cr_YOUR_ID/respond \
-  -H "Content-Type: application/json" \
-  -d '{
-    "decision": "approved",
-    "approver_id": "human_1",
-    "channel": "api"
-  }'
-```
-
-### Using Python:
+## Tier 1 — Local Terminal (30 seconds)
 
 ```bash
 pip install acp-sdk
 ```
 
 ```python
-import asyncio
-from acp import ACPClient, requires_consent, ConsentDenied
+from acp import requires_consent
 
-client = ACPClient(
-    gateway_url="http://localhost:3000",
-    agent_id="my_agent",
-)
+@requires_consent("high")
+def send_email(to, subject, body):
+    print(f"Sending email to {to}")
 
-@requires_consent(client, category="communication", risk_level="high")
-async def send_email(to: str, subject: str, body: str):
-    print(f"Sending email to {to}: {subject}")
-    return {"sent": True}
-
-async def main():
-    try:
-        await send_email("boss@company.com", "Report", "Weekly update")
-    except ConsentDenied as e:
-        print(f"Denied: {e.reason}")
-    finally:
-        await client.close()
-
-asyncio.run(main())
+send_email("ceo@company.com", "Report", "Here it is.")
+# → Terminal prompt: Approve? [y/N]
 ```
 
-### Using TypeScript:
+Done. That's the whole integration.
+
+## Tier 2 — Telegram Approval (2 minutes)
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram → `/newbot` → get your token
+2. Send any message to your bot, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` to get your chat ID
+3. Set env vars:
 
 ```bash
-npm install @acp/sdk
+pip install acp-sdk[remote]
+export ACP_TELEGRAM_TOKEN="123456:ABC-DEF..."
+export ACP_TELEGRAM_CHAT_ID="987654321"
 ```
 
-```typescript
-import { ACPClient } from '@acp/sdk';
+4. Run the same code. Consent requests now appear on your phone with [✅ Approve] [❌ Deny] buttons.
 
-const client = new ACPClient({
-  gatewayUrl: 'http://localhost:3000',
-  agentId: 'my_agent',
-});
-
-const consent = await client.requestConsent({
-  tool: 'send_email',
-  parameters: { to: 'boss@company.com', subject: 'Report' },
-  description: 'Send weekly report',
-  category: 'communication',
-  riskLevel: 'high',
-});
-
-const response = await consent.waitForDecision();
-console.log('Decision:', response.decision);
-```
-
-## Add Telegram Notifications
-
-1. Create a bot via [@BotFather](https://t.me/BotFather)
-2. Get your chat ID (send a message to your bot, then check `https://api.telegram.org/bot<TOKEN>/getUpdates`)
-3. Set environment variables:
+## Tier 3 — Production Gateway (5 minutes)
 
 ```bash
-export ACP_TELEGRAM_TOKEN="your-bot-token"
-export ACP_TELEGRAM_CHAT_ID="your-chat-id"
+# Start the gateway (one command)
+npx acp-gateway
+
+# Or with Docker:
+docker run -p 3000:3000 \
+  -e ACP_TELEGRAM_TOKEN=your-token \
+  -e ACP_TELEGRAM_CHAT_ID=your-chat-id \
+  acp-gateway
 ```
 
-4. Restart the gateway. Now consent requests appear as Telegram messages with Approve/Deny buttons!
+Point your Python code at it:
 
-## Next Steps
+```bash
+export ACP_GATEWAY_URL="http://localhost:3000"
+```
 
-- 📖 Read the [full documentation](../docs/)
-- 🔧 Configure [policies](../docs/policy-reference.md)
-- 🔐 Review the [security model](../docs/security-model.md)
-- 🏗️ Check [integration examples](../sdk/python/examples/)
+Same Python code — no changes. Now you get:
+- Ed25519 cryptographic proofs
+- Hash-chained audit trail
+- Declarative policy engine
+- SQLite persistence
+- Multiple channel adapters
+
+## Configuration
+
+All via environment variables — no config files needed:
+
+| Variable | Tier | Description |
+|---|---|---|
+| *(none)* | 1 | Terminal prompt |
+| `ACP_TELEGRAM_TOKEN` | 2 | Telegram bot token |
+| `ACP_TELEGRAM_CHAT_ID` | 2 | Telegram chat ID |
+| `ACP_GATEWAY_URL` | 3 | Gateway server URL |
+| `ACP_GATEWAY_API_KEY` | 3 | Gateway authentication key |
+| `ACP_AGENT_ID` | Any | Agent identifier (default: "default") |
+| `ACP_AGENT_NAME` | Any | Agent display name |

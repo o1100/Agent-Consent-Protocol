@@ -1,15 +1,20 @@
 """
-ACP Python SDK — Protocol Types
+ACP — Types and Built-in Risk Classification
 
-Dataclasses for all Agent Consent Protocol messages.
+Zero external dependencies. Everything here uses Python stdlib only.
 """
 
 from __future__ import annotations
 
+import json
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+
+# ─── Enums ───────────────────────────────────────────────────────
 
 class ActionCategory(str, Enum):
     COMMUNICATION = "communication"
@@ -30,10 +35,9 @@ class RiskLevel(str, Enum):
 
 class ConsentDecision(str, Enum):
     APPROVED = "approved"
-    APPROVED_WITH_MODIFICATIONS = "approved_with_modifications"
     DENIED = "denied"
-    ESCALATED = "escalated"
-    DEFERRED = "deferred"
+    APPROVED_WITH_MODIFICATIONS = "approved_with_modifications"
+    EXPIRED = "expired"
 
 
 class ConsentStatus(str, Enum):
@@ -41,10 +45,158 @@ class ConsentStatus(str, Enum):
     APPROVED = "approved"
     DENIED = "denied"
     EXPIRED = "expired"
-    CANCELLED = "cancelled"
-    EXECUTED = "executed"
-    FAILED = "failed"
 
+
+# ─── Built-in Tool Classification ────────────────────────────────
+#
+# Convention over configuration: common tools have sensible defaults.
+# Users only override if they disagree.
+
+_TOOL_CLASSIFICATIONS: Dict[str, Tuple[ActionCategory, RiskLevel]] = {
+    # Data — Low risk (read-only)
+    "web_search":           (ActionCategory.DATA, RiskLevel.LOW),
+    "search":               (ActionCategory.DATA, RiskLevel.LOW),
+    "search_web":           (ActionCategory.DATA, RiskLevel.LOW),
+    "read_file":            (ActionCategory.DATA, RiskLevel.LOW),
+    "read":                 (ActionCategory.DATA, RiskLevel.LOW),
+    "list_files":           (ActionCategory.DATA, RiskLevel.LOW),
+    "list_directory":       (ActionCategory.DATA, RiskLevel.LOW),
+    "get_weather":          (ActionCategory.DATA, RiskLevel.LOW),
+    "calculator":           (ActionCategory.DATA, RiskLevel.LOW),
+    "lookup":               (ActionCategory.DATA, RiskLevel.LOW),
+    "fetch_url":            (ActionCategory.DATA, RiskLevel.LOW),
+    "get_time":             (ActionCategory.DATA, RiskLevel.LOW),
+    "git_status":           (ActionCategory.SYSTEM, RiskLevel.LOW),
+    "git_log":              (ActionCategory.SYSTEM, RiskLevel.LOW),
+    "git_diff":             (ActionCategory.SYSTEM, RiskLevel.LOW),
+
+    # Data — Medium risk (writes)
+    "write_file":           (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "create_file":          (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "edit_file":            (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "update_file":          (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "sql_query":            (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "db_query":             (ActionCategory.DATA, RiskLevel.MEDIUM),
+
+    # Data — High risk (destructive)
+    "delete_file":          (ActionCategory.DATA, RiskLevel.HIGH),
+    "remove_file":          (ActionCategory.DATA, RiskLevel.HIGH),
+    "truncate_table":       (ActionCategory.DATA, RiskLevel.HIGH),
+
+    # Data — Critical (irreversible)
+    "delete_database":      (ActionCategory.DATA, RiskLevel.CRITICAL),
+    "drop_table":           (ActionCategory.DATA, RiskLevel.CRITICAL),
+    "drop_database":        (ActionCategory.DATA, RiskLevel.CRITICAL),
+
+    # Communication — Medium
+    "send_slack_message":   (ActionCategory.COMMUNICATION, RiskLevel.MEDIUM),
+    "send_slack":           (ActionCategory.COMMUNICATION, RiskLevel.MEDIUM),
+    "send_discord_message": (ActionCategory.COMMUNICATION, RiskLevel.MEDIUM),
+    "send_message":         (ActionCategory.COMMUNICATION, RiskLevel.MEDIUM),
+    "create_calendar":      (ActionCategory.COMMUNICATION, RiskLevel.MEDIUM),
+    "create_event":         (ActionCategory.COMMUNICATION, RiskLevel.MEDIUM),
+
+    # Communication — High
+    "send_email":           (ActionCategory.COMMUNICATION, RiskLevel.HIGH),
+    "send_sms":             (ActionCategory.COMMUNICATION, RiskLevel.HIGH),
+    "send_notification":    (ActionCategory.COMMUNICATION, RiskLevel.HIGH),
+
+    # Public — High
+    "send_tweet":           (ActionCategory.PUBLIC, RiskLevel.HIGH),
+    "post_tweet":           (ActionCategory.PUBLIC, RiskLevel.HIGH),
+    "create_post":          (ActionCategory.PUBLIC, RiskLevel.HIGH),
+    "publish":              (ActionCategory.PUBLIC, RiskLevel.HIGH),
+    "post_comment":         (ActionCategory.PUBLIC, RiskLevel.MEDIUM),
+    "post_github_comment":  (ActionCategory.PUBLIC, RiskLevel.MEDIUM),
+
+    # System — High
+    "execute_shell":        (ActionCategory.SYSTEM, RiskLevel.HIGH),
+    "run_command":          (ActionCategory.SYSTEM, RiskLevel.HIGH),
+    "shell":                (ActionCategory.SYSTEM, RiskLevel.HIGH),
+    "exec":                 (ActionCategory.SYSTEM, RiskLevel.HIGH),
+    "bash":                 (ActionCategory.SYSTEM, RiskLevel.HIGH),
+    "git_push":             (ActionCategory.SYSTEM, RiskLevel.HIGH),
+    "git_commit":           (ActionCategory.SYSTEM, RiskLevel.MEDIUM),
+
+    # System — Critical
+    "deploy":               (ActionCategory.SYSTEM, RiskLevel.CRITICAL),
+    "deploy_production":    (ActionCategory.SYSTEM, RiskLevel.CRITICAL),
+    "modify_dns":           (ActionCategory.SYSTEM, RiskLevel.CRITICAL),
+    "restart_service":      (ActionCategory.SYSTEM, RiskLevel.CRITICAL),
+    "shutdown":             (ActionCategory.SYSTEM, RiskLevel.CRITICAL),
+
+    # Financial — High/Critical
+    "transfer_money":       (ActionCategory.FINANCIAL, RiskLevel.CRITICAL),
+    "make_payment":         (ActionCategory.FINANCIAL, RiskLevel.CRITICAL),
+    "purchase":             (ActionCategory.FINANCIAL, RiskLevel.HIGH),
+    "create_order":         (ActionCategory.FINANCIAL, RiskLevel.HIGH),
+    "refund":               (ActionCategory.FINANCIAL, RiskLevel.HIGH),
+    "subscribe":            (ActionCategory.FINANCIAL, RiskLevel.HIGH),
+
+    # Physical
+    "unlock_door":          (ActionCategory.PHYSICAL, RiskLevel.HIGH),
+    "lock_door":            (ActionCategory.PHYSICAL, RiskLevel.MEDIUM),
+    "set_thermostat":       (ActionCategory.PHYSICAL, RiskLevel.MEDIUM),
+    "turn_on":              (ActionCategory.PHYSICAL, RiskLevel.MEDIUM),
+    "turn_off":             (ActionCategory.PHYSICAL, RiskLevel.MEDIUM),
+
+    # Identity
+    "change_password":      (ActionCategory.IDENTITY, RiskLevel.CRITICAL),
+    "update_profile":       (ActionCategory.IDENTITY, RiskLevel.MEDIUM),
+    "revoke_token":         (ActionCategory.IDENTITY, RiskLevel.HIGH),
+}
+
+# Patterns for prefix-based matching
+_TOOL_PREFIXES: Dict[str, Tuple[ActionCategory, RiskLevel]] = {
+    "read_":    (ActionCategory.DATA, RiskLevel.LOW),
+    "get_":     (ActionCategory.DATA, RiskLevel.LOW),
+    "list_":    (ActionCategory.DATA, RiskLevel.LOW),
+    "fetch_":   (ActionCategory.DATA, RiskLevel.LOW),
+    "search_":  (ActionCategory.DATA, RiskLevel.LOW),
+    "send_":    (ActionCategory.COMMUNICATION, RiskLevel.HIGH),
+    "delete_":  (ActionCategory.DATA, RiskLevel.HIGH),
+    "remove_":  (ActionCategory.DATA, RiskLevel.HIGH),
+    "create_":  (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "update_":  (ActionCategory.DATA, RiskLevel.MEDIUM),
+    "deploy_":  (ActionCategory.SYSTEM, RiskLevel.CRITICAL),
+    "post_":    (ActionCategory.PUBLIC, RiskLevel.HIGH),
+}
+
+
+def classify_tool(
+    tool_name: str,
+    override_category: Optional[str] = None,
+    override_risk: Optional[str] = None,
+) -> Tuple[ActionCategory, RiskLevel]:
+    """
+    Classify a tool by name into a category and risk level.
+
+    Uses built-in mappings first, then prefix heuristics, then defaults.
+    Explicit overrides always win.
+    """
+    # Explicit overrides always win
+    cat = ActionCategory(override_category) if override_category else None
+    risk = RiskLevel(override_risk) if override_risk else None
+
+    if cat and risk:
+        return cat, risk
+
+    # Exact match
+    normalized = tool_name.lower().strip()
+    if normalized in _TOOL_CLASSIFICATIONS:
+        auto_cat, auto_risk = _TOOL_CLASSIFICATIONS[normalized]
+        return cat or auto_cat, risk or auto_risk
+
+    # Prefix match
+    for prefix, (p_cat, p_risk) in _TOOL_PREFIXES.items():
+        if normalized.startswith(prefix):
+            return cat or p_cat, risk or p_risk
+
+    # Default: medium risk data operation
+    return cat or ActionCategory.DATA, risk or RiskLevel.MEDIUM
+
+
+# ─── Dataclasses ─────────────────────────────────────────────────
 
 @dataclass
 class AgentInfo:
@@ -59,16 +211,33 @@ class ActionInfo:
     tool: str
     category: ActionCategory
     risk_level: RiskLevel
-    parameters: dict[str, Any] = field(default_factory=dict)
+    parameters: Dict[str, Any] = field(default_factory=dict)
     description: str = ""
     estimated_impact: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "tool": self.tool,
+            "category": self.category.value,
+            "risk_level": self.risk_level.value,
+            "parameters": self.parameters,
+            "description": self.description,
+            "estimated_impact": self.estimated_impact,
+        }
 
 
 @dataclass
 class RequestContext:
     conversation_summary: Optional[str] = None
-    previous_actions: Optional[list[str]] = None
+    previous_actions: Optional[List[str]] = None
     trigger: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "conversation_summary": self.conversation_summary,
+            "previous_actions": self.previous_actions,
+            "trigger": self.trigger,
+        }
 
 
 @dataclass
@@ -80,135 +249,69 @@ class ConsentProof:
 
 
 @dataclass
-class ConsentConditions:
-    valid_until: str
-    max_retries: Optional[int] = None
-    require_exact_params: Optional[bool] = None
-
-
-@dataclass
-class ApproverInfo:
-    id: str
-    channel: str
-    device_fingerprint: Optional[str] = None
-
-
-@dataclass
 class ConsentRequest:
-    """A consent request sent from the SDK to the gateway."""
-    id: str
-    agent: AgentInfo
+    """Internal representation of a consent request."""
     action: ActionInfo
-    nonce: str
-    timestamp: str
-    expires_at: str
-    version: str = "0.1.0"
+    agent: AgentInfo
     context: Optional[RequestContext] = None
-    policy_ref: Optional[str] = None
-    callback_url: Optional[str] = None
+    id: str = field(default_factory=lambda: f"cr_{uuid.uuid4().hex[:20]}")
+    nonce: str = field(default_factory=lambda: f"n_{uuid.uuid4().hex}")
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    expires_at: str = ""
 
-    def to_dict(self) -> dict:
-        """Convert to a dictionary suitable for JSON serialization."""
-        result: dict[str, Any] = {
-            "type": "consent_request",
-            "version": self.version,
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
             "id": self.id,
-            "timestamp": self.timestamp,
-            "expires_at": self.expires_at,
-            "agent": {
-                "id": self.agent.id,
-                "name": self.agent.name,
-                "framework": self.agent.framework,
-                "session_id": self.agent.session_id,
-            },
-            "action": {
-                "tool": self.action.tool,
-                "category": self.action.category.value,
-                "risk_level": self.action.risk_level.value,
-                "parameters": self.action.parameters,
-                "description": self.action.description,
-            },
+            "agent": {"id": self.agent.id, "name": self.agent.name},
+            "action": self.action.to_dict(),
             "nonce": self.nonce,
+            "timestamp": self.timestamp,
         }
         if self.context:
-            result["context"] = {
-                "conversation_summary": self.context.conversation_summary,
-                "previous_actions": self.context.previous_actions,
-                "trigger": self.context.trigger,
-            }
-        return result
+            d["context"] = self.context.to_dict()
+        return d
 
 
 @dataclass
 class ConsentResponse:
-    """A consent response received from the gateway."""
+    """The result of a consent prompt — approved, denied, etc."""
     request_id: str
     decision: ConsentDecision
-    timestamp: str
-    approver: ApproverInfo
-    conditions: ConsentConditions
-    nonce: str
-    proof: ConsentProof
-    modifications: Optional[dict[str, Any]] = None
+    approver_id: str = "unknown"
+    channel: str = "local"
     reason: Optional[str] = None
-
-    def apply_modifications(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Apply approved modifications to the original parameters."""
-        if not self.modifications:
-            return params
-        result = dict(params)
-        for key, value in self.modifications.items():
-            # Support dotted path keys like "action.parameters.text"
-            parts = key.split(".")
-            target = result
-            for part in parts[:-1]:
-                if part in target and isinstance(target[part], dict):
-                    target = target[part]
-                else:
-                    break
-            target[parts[-1]] = value
-        return result
-
-
-@dataclass
-class PolicyEvaluation:
-    """Result of evaluating a policy for an action."""
-    action: str  # auto_approve, always_ask, never_allow, etc.
-    rule_id: Optional[str] = None
-    rule_name: Optional[str] = None
-    reason: str = ""
-    category: Optional[ActionCategory] = None
-    risk_level: Optional[RiskLevel] = None
+    proof: Optional[ConsentProof] = None
+    modifications: Optional[Dict[str, Any]] = None
     auto_approved: bool = False
-    auto_denied: bool = False
 
-
-class ConsentDenied(Exception):
-    """Raised when a consent request is denied by the approver."""
-
-    def __init__(self, reason: Optional[str] = None, request_id: Optional[str] = None):
-        self.reason = reason or "Action denied by approver"
-        self.request_id = request_id
-        super().__init__(self.reason)
-
-
-class ConsentTimeout(Exception):
-    """Raised when a consent request times out."""
-
-    def __init__(self, request_id: Optional[str] = None, timeout_seconds: Optional[int] = None):
-        self.request_id = request_id
-        self.timeout_seconds = timeout_seconds
-        super().__init__(
-            f"Consent request timed out after {timeout_seconds}s"
-            if timeout_seconds
-            else "Consent request timed out"
+    @property
+    def approved(self) -> bool:
+        return self.decision in (
+            ConsentDecision.APPROVED,
+            ConsentDecision.APPROVED_WITH_MODIFICATIONS,
         )
 
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "ConsentResponse":
+        """Parse a gateway JSON response."""
+        proof = None
+        if data.get("proof"):
+            p = data["proof"]
+            proof = ConsentProof(
+                algorithm=p.get("algorithm", "Ed25519"),
+                public_key=p.get("public_key", ""),
+                signature=p.get("signature", ""),
+                signed_payload_hash=p.get("signed_payload_hash", ""),
+            )
 
-class ConsentBlocked(Exception):
-    """Raised when an action is blocked by policy (never_allow)."""
-
-    def __init__(self, reason: Optional[str] = None, request_id: Optional[str] = None):
-        self.reason = reason or "Action blocked by policy"
-        self.request_id = request_id
-        super().__init__(self.reason)
+        return ConsentResponse(
+            request_id=data.get("request_id", ""),
+            decision=ConsentDecision(data.get("decision", "denied")),
+            approver_id=data.get("approver", {}).get("id", "unknown"),
+            channel=data.get("approver", {}).get("channel", "gateway"),
+            reason=data.get("reason"),
+            proof=proof,
+            modifications=data.get("modifications"),
+        )

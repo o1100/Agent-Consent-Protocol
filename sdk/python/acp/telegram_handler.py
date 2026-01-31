@@ -1,80 +1,29 @@
 """
-ACP Telegram Handler — Direct Telegram approval without a gateway.
+ACP — Direct Telegram Consent Handler (Tier 2)
 
-Tier 2: Set ACP_TELEGRAM_TOKEN and ACP_TELEGRAM_CHAT_ID env vars,
-and you get mobile approvals with zero server infrastructure.
+Sends a consent request directly to Telegram and polls for a response.
+No gateway needed — just set ACP_TELEGRAM_TOKEN and ACP_TELEGRAM_CHAT_ID.
 
-Uses only stdlib + requests (optional dependency).
+Requires: pip install acp-sdk[remote]  (which adds `requests`)
 """
 
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from .types import ConsentRequest, ConsentResponse
+    from .types import ConsentRequest
 
-# Risk emoji mapping
+from .types import ConsentDecision, ConsentResponse
+
+
 RISK_EMOJI = {"low": "🟢", "medium": "🟡", "high": "🔴", "critical": "⛔"}
 CATEGORY_EMOJI = {
-    "communication": "💬",
-    "financial": "💰",
-    "data": "📊",
-    "system": "⚙️",
-    "public": "📢",
-    "identity": "🪪",
-    "physical": "🏠",
+    "communication": "💬", "financial": "💰", "data": "📊",
+    "system": "⚙️", "public": "📢", "identity": "🪪", "physical": "🏠",
 }
-
-
-def _get_requests():
-    """Import requests, raising a clear error if not installed."""
-    try:
-        import requests
-        return requests
-    except ImportError:
-        raise ImportError(
-            "The 'requests' library is required for Telegram mode. "
-            "Install it with: pip install acp-sdk[remote]  or  pip install requests"
-        )
-
-
-def _format_message(request: "ConsentRequest") -> str:
-    """Format a consent request as a Telegram message."""
-    risk = request.action.risk_level.value
-    category = request.action.category.value
-    risk_emoji = RISK_EMOJI.get(risk, "❓")
-    cat_emoji = CATEGORY_EMOJI.get(category, "❓")
-
-    params_str = json.dumps(request.action.parameters, indent=2)
-    if len(params_str) > 500:
-        params_str = params_str[:497] + "..."
-
-    lines = [
-        "🤖 *Agent Consent Request*",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "",
-        f"*Agent:* {request.agent.name or request.agent.id}",
-        f"*Action:* `{request.action.tool}`",
-        f"*Risk:* {risk_emoji} {risk.upper()}",
-        f"*Category:* {cat_emoji} {category}",
-        "",
-        "📝 *Description:*",
-        request.action.description,
-        "",
-        "📋 *Parameters:*",
-        f"```json\n{params_str}\n```",
-    ]
-
-    if request.context and request.context.conversation_summary:
-        lines.extend(["", "💡 *Context:*", request.context.conversation_summary])
-
-    lines.extend(["", f"📎 ID: `{request.id}`"])
-
-    return "\n".join(lines)
 
 
 def prompt_telegram(
@@ -82,88 +31,98 @@ def prompt_telegram(
     bot_token: Optional[str] = None,
     chat_id: Optional[str] = None,
     timeout_seconds: int = 900,
-    poll_interval: float = 2.0,
-) -> "ConsentResponse":
+) -> ConsentResponse:
     """
-    Send a consent request to Telegram and wait for approval via inline buttons.
+    Send a consent request to Telegram and wait for button callback.
 
-    Args:
-        request: The consent request to send.
-        bot_token: Telegram bot token. Defaults to ACP_TELEGRAM_TOKEN env var.
-        chat_id: Telegram chat ID. Defaults to ACP_TELEGRAM_CHAT_ID env var.
-        timeout_seconds: How long to wait for a response (default: 15 min).
-        poll_interval: How often to poll for updates (default: 2s).
-
-    Returns:
-        ConsentResponse with the human's decision.
+    Uses only the `requests` library — no bot framework needed.
     """
-    from .types import ConsentResponse, ConsentDecision
-
-    requests = _get_requests()
-
-    token = bot_token or os.environ.get("ACP_TELEGRAM_TOKEN")
-    chat = chat_id or os.environ.get("ACP_TELEGRAM_CHAT_ID")
-
-    if not token:
-        raise ValueError(
-            "Telegram bot token required. Set ACP_TELEGRAM_TOKEN env var "
-            "or pass bot_token parameter."
-        )
-    if not chat:
-        raise ValueError(
-            "Telegram chat ID required. Set ACP_TELEGRAM_CHAT_ID env var "
-            "or pass chat_id parameter."
+    try:
+        import requests as http
+    except ImportError:
+        raise ImportError(
+            "Telegram mode requires the 'requests' library. "
+            "Install with: pip install acp-sdk[remote]"
         )
 
-    base_url = f"https://api.telegram.org/bot{token}"
+    if not bot_token or not chat_id:
+        raise ValueError(
+            "Telegram mode requires ACP_TELEGRAM_TOKEN and ACP_TELEGRAM_CHAT_ID "
+            "environment variables (or pass bot_token/chat_id)."
+        )
 
-    # Send the message with inline keyboard
-    text = _format_message(request)
+    api = f"https://api.telegram.org/bot{bot_token}"
+    action = request.action
+    risk = action.risk_level.value
+    category = action.category.value
+
+    # Format parameters (truncate for Telegram message limits)
+    params_str = json.dumps(action.parameters, indent=2, default=str)
+    if len(params_str) > 500:
+        params_str = params_str[:497] + "..."
+
+    text = (
+        f"🤖 *Agent Consent Request*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"*Action:* `{action.tool}`\n"
+        f"*Risk:* {RISK_EMOJI.get(risk, '❓')} {risk.upper()}\n"
+        f"*Category:* {CATEGORY_EMOJI.get(category, '❓')} {category}\n"
+    )
+
+    if request.agent.name:
+        text += f"*Agent:* {request.agent.name}\n"
+
+    if action.description:
+        text += f"\n📝 {_escape_md(action.description)}\n"
+
+    text += f"\n```json\n{params_str}\n```"
+
+    if request.context and request.context.conversation_summary:
+        text += f"\n💡 _{_escape_md(request.context.conversation_summary)}_"
+
+    # Send message with inline buttons
     keyboard = {
-        "inline_keyboard": [
-            [
-                {"text": "✅ Approve", "callback_data": f"acp:approve:{request.id}"},
-                {"text": "❌ Deny", "callback_data": f"acp:deny:{request.id}"},
-            ]
-        ]
+        "inline_keyboard": [[
+            {"text": "✅ Approve", "callback_data": f"acp:approve:{request.id}"},
+            {"text": "❌ Deny", "callback_data": f"acp:deny:{request.id}"},
+        ]]
     }
 
-    resp = requests.post(
-        f"{base_url}/sendMessage",
-        json={
-            "chat_id": chat,
-            "text": text,
-            "parse_mode": "Markdown",
-            "reply_markup": keyboard,
-        },
-        timeout=30,
-    )
+    resp = http.post(f"{api}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+        "reply_markup": keyboard,
+    }, timeout=30)
     resp.raise_for_status()
     msg_data = resp.json()
     message_id = msg_data["result"]["message_id"]
 
-    # Poll for callback query responses
-    start_time = time.time()
+    # Get current update_id to only look at new updates
+    updates_resp = http.get(f"{api}/getUpdates", params={"limit": 1, "offset": -1}, timeout=10)
     last_update_id = 0
+    if updates_resp.ok:
+        results = updates_resp.json().get("result", [])
+        if results:
+            last_update_id = results[-1]["update_id"] + 1
 
-    while time.time() - start_time < timeout_seconds:
+    # Poll for callback
+    start = time.time()
+    while time.time() - start < timeout_seconds:
         try:
-            resp = requests.get(
-                f"{base_url}/getUpdates",
-                params={
-                    "offset": last_update_id + 1,
-                    "timeout": int(poll_interval),
-                    "allowed_updates": json.dumps(["callback_query"]),
-                },
-                timeout=poll_interval + 10,
-            )
-            resp.raise_for_status()
-            updates = resp.json().get("result", [])
+            updates = http.get(f"{api}/getUpdates", params={
+                "offset": last_update_id,
+                "timeout": 10,  # Long polling
+                "allowed_updates": '["callback_query"]',
+            }, timeout=15)
 
-            for update in updates:
-                last_update_id = update["update_id"]
+            if not updates.ok:
+                time.sleep(2)
+                continue
+
+            for update in updates.json().get("result", []):
+                last_update_id = update["update_id"] + 1
                 callback = update.get("callback_query")
-
                 if not callback or not callback.get("data", "").startswith("acp:"):
                     continue
 
@@ -171,67 +130,57 @@ def prompt_telegram(
                 if len(parts) != 3 or parts[2] != request.id:
                     continue
 
-                action = parts[1]
-                decision = (
-                    ConsentDecision.APPROVED
-                    if action == "approve"
-                    else ConsentDecision.DENIED
-                )
-                approver_id = f"tg_{callback['from']['id']}"
-                approver_name = callback["from"].get("first_name", "User")
+                decision_str = parts[1]
+                user = callback.get("from", {})
+                user_name = user.get("first_name", "User")
 
-                # Answer the callback query
-                requests.post(
-                    f"{base_url}/answerCallbackQuery",
-                    json={
-                        "callback_query_id": callback["id"],
-                        "text": "Approved!" if action == "approve" else "Denied!",
-                    },
-                    timeout=10,
-                )
+                # Answer the callback
+                http.post(f"{api}/answerCallbackQuery", json={
+                    "callback_query_id": callback["id"],
+                    "text": "✅ Approved!" if decision_str == "approve" else "❌ Denied",
+                }, timeout=10)
 
                 # Update the message
-                emoji = "✅" if action == "approve" else "❌"
-                label = "Approved" if action == "approve" else "Denied"
-                requests.post(
-                    f"{base_url}/editMessageText",
-                    json={
-                        "chat_id": chat,
-                        "message_id": message_id,
-                        "text": (
-                            f"{emoji} *{label}* by {approver_name}\n"
-                            f"Request: `{request.id}`\n"
-                            f"Action: `{request.action.tool}`"
-                        ),
-                        "parse_mode": "Markdown",
-                    },
-                    timeout=10,
+                decision = (
+                    ConsentDecision.APPROVED
+                    if decision_str == "approve"
+                    else ConsentDecision.DENIED
                 )
+                emoji = "✅" if decision == ConsentDecision.APPROVED else "❌"
+                label = "Approved" if decision == ConsentDecision.APPROVED else "Denied"
+
+                http.post(f"{api}/editMessageText", json={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": (
+                        f"{emoji} *{label}* by {user_name}\n"
+                        f"Action: `{action.tool}`\n"
+                        f"ID: `{request.id}`"
+                    ),
+                    "parse_mode": "Markdown",
+                }, timeout=10)
 
                 return ConsentResponse(
                     request_id=request.id,
                     decision=decision,
-                    approver_id=approver_id,
+                    approver_id=f"tg_{user.get('id', 'unknown')}",
                     channel="telegram",
+                    reason=f"{label} by {user_name} via Telegram",
                 )
 
-        except Exception:
-            # Network errors — keep polling
-            time.sleep(poll_interval)
+        except http.exceptions.Timeout:
             continue
+        except Exception:
+            time.sleep(2)
 
     # Timeout — update message and deny
     try:
-        requests.post(
-            f"{base_url}/editMessageText",
-            json={
-                "chat_id": chat,
-                "message_id": message_id,
-                "text": f"⏰ *Expired* — Request `{request.id}` timed out.",
-                "parse_mode": "Markdown",
-            },
-            timeout=10,
-        )
+        http.post(f"{api}/editMessageText", json={
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": f"⏰ *Expired* — `{action.tool}` timed out (auto\\-denied)",
+            "parse_mode": "MarkdownV2",
+        }, timeout=10)
     except Exception:
         pass
 
@@ -240,5 +189,12 @@ def prompt_telegram(
         decision=ConsentDecision.DENIED,
         approver_id="system_timeout",
         channel="telegram",
-        reason="Request timed out",
+        reason=f"Timed out after {timeout_seconds}s",
     )
+
+
+def _escape_md(text: str) -> str:
+    """Escape Markdown special characters for Telegram."""
+    for char in ("_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"):
+        text = text.replace(char, f"\\{char}")
+    return text

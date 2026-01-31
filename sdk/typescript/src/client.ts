@@ -1,290 +1,265 @@
 /**
  * ACP TypeScript SDK — Client
  *
- * Two modes:
- * 1. Local: Terminal prompt via readline (default)
- * 2. Gateway: Full ACP gateway with policies & crypto
+ * Lightweight client. Uses only `fetch` (built into Node 18+).
+ * Zero external dependencies.
+ *
+ * Auto-detects mode from environment:
+ *   - ACP_GATEWAY_URL → gateway mode
+ *   - Default → throws (TypeScript SDK needs a gateway URL)
  */
 
-import * as crypto from 'node:crypto';
-import * as readline from 'node:readline';
 import type {
-  ACPClientOptions,
-  ConsentRequest,
+  ACPClientConfig,
+  ConsentRequestOptions,
   ConsentResponse,
-  RequestConsentOptions,
-  RiskLevel,
-  ActionCategory,
+  ConsentProof,
+  CreateConsentResult,
 } from './types.js';
+import { ConsentDenied, ConsentTimeout, ConsentBlocked } from './types.js';
 
-const DEFAULT_CLASSIFICATIONS: Record<string, { category: ActionCategory; risk: RiskLevel }> = {
-  web_search: { category: 'data', risk: 'low' },
-  read_file: { category: 'data', risk: 'low' },
-  write_file: { category: 'data', risk: 'medium' },
-  delete_file: { category: 'data', risk: 'high' },
-  send_email: { category: 'communication', risk: 'high' },
-  send_tweet: { category: 'public', risk: 'high' },
-  execute_shell: { category: 'system', risk: 'high' },
-  transfer_money: { category: 'financial', risk: 'critical' },
-  deploy_production: { category: 'system', risk: 'critical' },
-};
+/**
+ * Represents a pending consent request that can be polled.
+ */
+export class PendingConsent {
+  constructor(
+    private client: ACPClient,
+    public readonly requestId: string,
+    public readonly expiresAt: string
+  ) {}
 
-const RISK_EMOJI: Record<string, string> = {
-  low: '🟢', medium: '🟡', high: '🔴', critical: '⛔',
-};
+  /**
+   * Poll the gateway until a decision is made or timeout is reached.
+   */
+  async waitForDecision(options?: {
+    pollInterval?: number;
+    timeout?: number;
+  }): Promise<ConsentResponse> {
+    const pollInterval = options?.pollInterval ?? 2000;
+    const timeout = options?.timeout ?? 900_000;
+    const start = Date.now();
 
+    while (true) {
+      if (Date.now() - start > timeout) {
+        throw new ConsentTimeout(this.requestId, Math.floor(timeout / 1000));
+      }
+
+      const status = await this.client.checkStatus(this.requestId);
+
+      if (status.status === 'approved' && status.response) {
+        return status.response;
+      }
+
+      if (status.status === 'denied') {
+        throw new ConsentDenied(
+          status.response?.reason || 'Denied by approver',
+          this.requestId
+        );
+      }
+
+      if (status.status === 'expired') {
+        throw new ConsentTimeout(this.requestId);
+      }
+
+      await new Promise((r) => setTimeout(r, pollInterval));
+    }
+  }
+}
+
+/**
+ * ACP Client for TypeScript.
+ *
+ * Uses only the built-in `fetch` API — zero dependencies.
+ *
+ * @example
+ * ```ts
+ * const client = new ACPClient({
+ *   gatewayUrl: 'http://localhost:3000',
+ *   agentId: 'my_agent',
+ * });
+ *
+ * const consent = await client.requestConsent({
+ *   tool: 'send_email',
+ *   parameters: { to: 'ceo@co.com' },
+ *   description: 'Send quarterly report',
+ *   riskLevel: 'high',
+ * });
+ *
+ * const response = await consent.waitForDecision();
+ * ```
+ */
 export class ACPClient {
-  private options: Required<
-    Pick<ACPClientOptions, 'agentId' | 'timeoutSeconds' | 'autoApproveLowRisk'>
-  > & ACPClientOptions;
-  private mode: 'local' | 'gateway';
+  private gatewayUrl: string;
+  private agentId: string;
+  private apiKey?: string;
+  private agentName?: string;
+  private agentFramework?: string;
+  private sessionId?: string;
+  private defaultTimeout: number;
 
-  constructor(options: ACPClientOptions) {
-    this.options = {
-      timeoutSeconds: 900,
-      autoApproveLowRisk: false,
-      ...options,
-    };
-
-    const gwUrl = options.gatewayUrl || process.env.ACP_GATEWAY_URL;
-    if (options.mode) {
-      this.mode = options.mode;
-    } else if (gwUrl) {
-      this.mode = 'gateway';
-      this.options.gatewayUrl = gwUrl;
-      this.options.gatewayApiKey = options.gatewayApiKey || process.env.ACP_GATEWAY_API_KEY;
-    } else {
-      this.mode = 'local';
-    }
+  constructor(config: ACPClientConfig) {
+    this.gatewayUrl = config.gatewayUrl.replace(/\/$/, '');
+    this.agentId = config.agentId;
+    this.apiKey = config.apiKey;
+    this.agentName = config.agentName;
+    this.agentFramework = config.agentFramework;
+    this.sessionId = config.sessionId;
+    this.defaultTimeout = config.defaultTimeout ?? 900;
   }
 
-  async requestConsent(opts: RequestConsentOptions): Promise<ConsentResponse> {
-    // Auto-classify
-    const classification = DEFAULT_CLASSIFICATIONS[opts.tool];
-    const category = opts.category || classification?.category || 'data';
-    const riskLevel = opts.risk_level || classification?.risk || 'medium';
-
-    // Build request
-    const request: ConsentRequest = {
-      type: 'consent_request',
-      version: '0.1.0',
-      id: `cr_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
-      timestamp: new Date().toISOString(),
-      agent: {
-        id: this.options.agentId,
-        name: this.options.agentName,
-        framework: this.options.framework,
-        session_id: opts.session_id,
-      },
-      action: {
-        tool: opts.tool,
-        description: opts.description,
-        category,
-        risk_level: riskLevel,
-        parameters: opts.parameters || {},
-        estimated_impact: opts.estimated_impact,
-      },
-      nonce: `n_${crypto.randomUUID()}`,
-    };
-
-    // Auto-approve low risk
-    if (this.options.autoApproveLowRisk && riskLevel === 'low') {
-      return {
-        request_id: request.id,
-        decision: 'approved',
-        timestamp: new Date().toISOString(),
-        approver_id: 'policy_auto',
-        channel: 'auto',
-        reason: 'Auto-approved: low risk',
-        auto_approved: true,
-      };
-    }
-
-    // Custom handler
-    if (this.options.onConsent) {
-      return this.options.onConsent(request);
-    }
-
-    if (this.mode === 'gateway') {
-      return this.requestGateway(request);
-    }
-    return this.requestLocal(request);
-  }
-
-  private async requestLocal(request: ConsentRequest): Promise<ConsentResponse> {
-    const risk = request.action.risk_level || 'medium';
-    const emoji = RISK_EMOJI[risk] || '❓';
-
-    console.log('\n' + '═'.repeat(60));
-    console.log('  🤖 AGENT CONSENT REQUEST');
-    console.log('═'.repeat(60));
-    console.log(`  Agent:       ${request.agent.name || request.agent.id}`);
-    console.log(`  Action:      ${request.action.tool}`);
-    console.log(`  Risk:        ${emoji} ${risk.toUpperCase()}`);
-    console.log(`  Category:    ${request.action.category}`);
-    console.log('─'.repeat(60));
-    console.log(`  Description: ${request.action.description}`);
-    if (request.action.parameters && Object.keys(request.action.parameters).length > 0) {
-      console.log('  Parameters:');
-      console.log(`  ${JSON.stringify(request.action.parameters, null, 2).split('\n').join('\n  ')}`);
-    }
-    console.log('═'.repeat(60));
-
-    const answer = await this.prompt('  [A]pprove or [D]eny? ');
-    const approved = answer.toLowerCase().startsWith('a');
-    console.log(`\n  → ${approved ? '✅ Approved' : '❌ Denied'}\n`);
-
-    return {
-      request_id: request.id,
-      decision: approved ? 'approved' : 'denied',
-      timestamp: new Date().toISOString(),
-      approver_id: 'local_user',
-      channel: 'terminal',
-    };
-  }
-
-  private async requestGateway(request: ConsentRequest): Promise<ConsentResponse> {
-    const url = this.options.gatewayUrl!.replace(/\/$/, '');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.options.gatewayApiKey) {
-      headers['Authorization'] = `Bearer ${this.options.gatewayApiKey}`;
-    }
-
+  /**
+   * Submit a consent request to the gateway.
+   * Returns a PendingConsent that can be polled for the decision.
+   *
+   * If the policy auto-approves, returns immediately.
+   * If the policy blocks, throws ConsentBlocked.
+   */
+  async requestConsent(options: ConsentRequestOptions): Promise<PendingConsent> {
     const body = {
-      agent_id: request.agent.id,
-      agent_name: request.agent.name,
-      agent_framework: request.agent.framework,
-      session_id: request.agent.session_id,
-      action: request.action,
-      timeout_seconds: this.options.timeoutSeconds,
+      agent_id: this.agentId,
+      agent_name: this.agentName,
+      agent_framework: this.agentFramework,
+      session_id: this.sessionId,
+      action: {
+        tool: options.tool,
+        category: options.category || 'data',
+        risk_level: options.riskLevel || 'medium',
+        parameters: options.parameters,
+        description: options.description,
+        estimated_impact: options.estimatedImpact,
+      },
+      context: options.context,
+      timeout_seconds: options.timeoutSeconds || this.defaultTimeout,
     };
 
-    const resp = await fetch(`${url}/api/v1/consent/request`, {
+    const response = await this._fetch('/api/v1/consent/request', {
       method: 'POST',
-      headers,
       body: JSON.stringify(body),
     });
 
-    const data = await resp.json() as any;
+    if (response.status === 403) {
+      const data = (await response.json()) as CreateConsentResult;
+      throw new ConsentBlocked(data.reason, data.request_id);
+    }
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`ACP Gateway error (${response.status}): ${text}`);
+    }
+
+    const data = (await response.json()) as CreateConsentResult;
 
     if (data.auto_approved) {
-      return {
-        request_id: data.request_id,
-        decision: 'approved',
-        timestamp: new Date().toISOString(),
-        approver_id: 'policy_auto',
-        channel: 'gateway',
-        auto_approved: true,
-      };
+      return new AutoApprovedConsent(data);
     }
 
-    if (data.auto_denied) {
-      return {
-        request_id: data.request_id,
-        decision: 'denied',
-        timestamp: new Date().toISOString(),
-        approver_id: 'policy_auto',
-        channel: 'gateway',
-        reason: data.reason,
-      };
+    return new PendingConsent(this, data.request_id, data.expires_at || '');
+  }
+
+  /** Check the status of a consent request. */
+  async checkStatus(
+    requestId: string
+  ): Promise<{ status: string; response?: ConsentResponse }> {
+    const response = await this._fetch(`/api/v1/consent/${requestId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to check status: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  /** Get the cryptographic proof for an approved request. */
+  async getProof(requestId: string): Promise<{
+    request_id: string;
+    status: string;
+    proof: ConsentProof;
+    valid_until: string;
+  }> {
+    const response = await this._fetch(`/api/v1/consent/${requestId}/proof`);
+    if (!response.ok) {
+      throw new Error(`Failed to get proof: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Wrap an async function with ACP consent.
+   *
+   * @example
+   * ```ts
+   * const safeSend = client.wrap(sendEmail, {
+   *   tool: 'send_email',
+   *   riskLevel: 'high',
+   * });
+   * await safeSend('user@co.com', 'Subject', 'Body');
+   * ```
+   */
+  wrap<T extends (...args: any[]) => Promise<any>>(
+    fn: T,
+    options: {
+      tool: string;
+      category?: string;
+      riskLevel?: string;
+      description?: string;
+    }
+  ): T {
+    const client = this;
+
+    const wrapped = async (...args: any[]) => {
+      const consent = await client.requestConsent({
+        tool: options.tool,
+        parameters: { args },
+        description: options.description || `Execute ${options.tool}`,
+        category: options.category as any,
+        riskLevel: options.riskLevel as any,
+      });
+
+      await consent.waitForDecision();
+      return fn(...args);
+    };
+
+    return wrapped as T;
+  }
+
+  private async _fetch(path: string, init?: RequestInit): Promise<Response> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(init?.headers as Record<string, string>),
+    };
+
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
 
-    // Poll for response
-    const requestId = data.request_id;
-    const deadline = Date.now() + (this.options.timeoutSeconds ?? 900) * 1000;
+    return fetch(`${this.gatewayUrl}${path}`, { ...init, headers });
+  }
+}
 
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 2000));
-      const poll = await fetch(`${url}/api/v1/consent/${requestId}`, { headers });
-      const status = await poll.json() as any;
+/** Auto-approved consent — resolves immediately without polling. */
+class AutoApprovedConsent extends PendingConsent {
+  private data: CreateConsentResult;
 
-      if (status.status === 'pending') continue;
+  constructor(data: CreateConsentResult) {
+    super(null as any, data.request_id, '');
+    this.data = data;
+  }
 
-      return {
-        request_id: requestId,
-        decision: status.status === 'approved' ? 'approved' : 'denied',
-        timestamp: new Date().toISOString(),
-        approver_id: status.response?.approver?.id || 'unknown',
-        channel: status.response?.approver?.channel || 'gateway',
-        reason: status.response?.reason,
-        proof: status.response?.proof,
-      };
-    }
-
+  async waitForDecision(): Promise<ConsentResponse> {
     return {
-      request_id: requestId,
-      decision: 'denied',
+      type: 'consent_response',
+      version: '0.1.0',
+      request_id: this.data.request_id,
       timestamp: new Date().toISOString(),
-      approver_id: 'system_timeout',
-      channel: 'gateway',
-      reason: 'Request timed out',
+      decision: 'approved',
+      approver: { id: 'policy_engine', channel: 'auto' },
+      modifications: null,
+      conditions: { valid_until: '' },
+      nonce: '',
+      proof: this.data.proof || {
+        algorithm: 'Ed25519',
+        public_key: '',
+        signature: '',
+        signed_payload_hash: '',
+      },
     };
   }
-
-  private prompt(question: string): Promise<string> {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    return new Promise(resolve => {
-      rl.question(question, answer => {
-        rl.close();
-        resolve(answer);
-      });
-    });
-  }
-}
-
-/**
- * Error thrown when consent is denied.
- */
-export class ConsentDeniedError extends Error {
-  response: ConsentResponse;
-  constructor(message: string, response: ConsentResponse) {
-    super(message);
-    this.name = 'ConsentDeniedError';
-    this.response = response;
-  }
-}
-
-/**
- * Create a consent-wrapped function.
- */
-export function requiresConsent(
-  riskLevel: RiskLevel = 'medium',
-  options?: { category?: ActionCategory; description?: string }
-) {
-  return function <T extends (...args: any[]) => any>(
-    _target: any,
-    propertyKey: string,
-    descriptor: TypeDescriptor<T>
-  ) {
-    const original = descriptor.value!;
-    descriptor.value = async function (...args: any[]) {
-      // Get or create a client from the instance
-      const client: ACPClient = (this as any)._acpClient || new ACPClient({ agentId: 'default' });
-
-      const response = await client.requestConsent({
-        tool: propertyKey,
-        description: options?.description || `Execute ${propertyKey}`,
-        parameters: args.length === 1 && typeof args[0] === 'object' ? args[0] : { args },
-        risk_level: riskLevel,
-        category: options?.category,
-      });
-
-      if (response.decision === 'approved' || response.decision === 'approved_with_modifications') {
-        return original.apply(this, args);
-      }
-
-      throw new ConsentDeniedError(
-        `Consent denied for ${propertyKey}: ${response.reason || 'No reason given'}`,
-        response
-      );
-    } as any;
-    return descriptor;
-  };
-}
-
-interface TypeDescriptor<T> {
-  value?: T;
-  writable?: boolean;
-  enumerable?: boolean;
-  configurable?: boolean;
 }

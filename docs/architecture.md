@@ -1,124 +1,86 @@
 # ACP Architecture
 
-## Overview
+## Design Philosophy
 
-The Agent Consent Protocol is built around a **separation of trust boundaries**. The agent and the consent system are deliberately isolated so that a compromised agent cannot bypass, forge, or manipulate human approvals.
+**Lightweight-first.** ACP scales from a single decorator with zero dependencies to a production gateway with Ed25519 crypto. You only add complexity when you need it.
 
-```
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  AGENT RUNTIME   │     │  ACP GATEWAY     │     │  HUMAN DEVICE    │
-│                  │     │  (separate       │     │  (phone, laptop) │
-│  LLM + Tools     │────▶│   process)       │────▶│                  │
-│  ACP Middleware   │     │  Policy Engine   │     │  Telegram / Web  │
-│                  │◀────│  Audit Trail     │◀────│  Push / Email    │
-│                  │     │  Crypto Signing  │     │                  │
-└──────────────────┘     └──────────────────┘     └──────────────────┘
-      Agent                   Gateway                   Human
-   can't bypass            holds keys              out-of-band
-   the middleware          signs proofs            approves/denies
-```
-
-## Components
-
-### 1. ACP Middleware (SDK)
-
-Lives inside the agent's process. Intercepts tool calls and:
-- Classifies actions by category and risk level
-- Evaluates local policy rules
-- Sends consent requests to the Gateway
-- Polls for responses
-- Verifies cryptographic proofs
-- Blocks or allows tool execution
-
-The middleware is a thin client — it has no signing keys and cannot forge approvals.
-
-### 2. ACP Gateway
-
-A standalone HTTP server that:
-- Receives consent requests from agents
-- Evaluates the full policy engine
-- Routes requests to approval channels
-- Collects human responses
-- Signs consent proofs with Ed25519 keys
-- Maintains the hash-chained audit trail
-- Stores consent state in SQLite
-
-The Gateway is the security boundary. It must run in a separate process (ideally on a separate machine in production).
-
-### 3. Approval Channels
-
-Pluggable adapters that deliver consent requests to humans:
-- **Telegram**: Inline button messages (✅ Approve / ❌ Deny)
-- **Webhook**: Generic HTTP POST for custom integrations
-- **CLI**: Terminal-based for development
-- **Web Dashboard**: (planned) Rich web UI
-- **Push Notification**: (planned) iOS/Android
-
-### 4. Audit Trail
-
-Append-only JSONL file with SHA-256 hash chaining:
-- Every event links to the previous event's hash
-- Tampering with any event breaks the chain
-- Queryable by request ID, agent, time, category, etc.
-
-## Request Flow
+## Three Tiers
 
 ```
-1. Agent calls tool("send_email", {to: "ceo@co.com"})
-2. SDK middleware intercepts the call
-3. SDK classifies: category=communication, risk=high
-4. SDK sends POST /api/v1/consent/request to Gateway
-5. Gateway evaluates policy → "always_ask"
-6. Gateway routes to Telegram adapter
-7. Human receives Telegram message with [Approve] [Deny]
-8. Human taps [Approve]
-9. Gateway signs the approval with Ed25519
-10. SDK polls GET /api/v1/consent/:id → gets signed proof
-11. SDK verifies the signature
-12. Tool executes: email sends
-13. Audit trail records the full lifecycle
+Tier 1 — Local (Zero Config)
+┌──────────┐     ┌──────────────┐     ┌──────────┐
+│ AI Agent │────▶│  @requires_  │────▶│ Terminal  │
+│          │     │  consent()   │     │ Prompt    │
+│          │◀────│  decorator   │◀────│ [y/N]     │
+└──────────┘     └──────────────┘     └──────────┘
+
+Tier 2 — Mobile (One Env Var)
+┌──────────┐     ┌──────────────┐     ┌──────────┐
+│ AI Agent │────▶│  @requires_  │────▶│ Telegram  │
+│          │     │  consent()   │     │ Bot API   │──▶ 📱
+│          │◀────│  decorator   │◀────│           │◀── [✅][❌]
+└──────────┘     └──────────────┘     └──────────┘
+
+Tier 3 — Production (Full Security)
+┌──────────┐     ┌──────────────┐     ┌──────────┐     ┌──────────┐
+│ AI Agent │────▶│  @requires_  │────▶│   ACP    │────▶│ Telegram │──▶📱
+│          │     │  consent()   │     │ Gateway  │     │ Webhook  │
+│          │◀────│  decorator   │◀────│          │◀────│ CLI      │
+└──────────┘     └──────────────┘     └──────────┘     └──────────┘
+                                       │ Policy  │
+                                       │ Crypto  │
+                                       │ Audit   │
+                                       └─────────┘
 ```
 
-## Data Flow Diagram
+## Mode Auto-Detection
 
-```
-                    ┌─────────────────────────┐
-                    │     Policy JSON File     │
-                    │   (hot-reloadable)       │
-                    └────────────┬────────────┘
-                                 │
-┌─────────────┐    ┌─────────────▼─────────────┐    ┌──────────────┐
-│  Agent SDK  │───▶│      ACP GATEWAY          │───▶│  Telegram    │
-│  (HTTP)     │    │                            │    │  Bot API     │
-│             │◀───│  REST API ─▶ Policy Engine │◀───│              │
-└─────────────┘    │           ─▶ Consent Store │    └──────────────┘
-                   │           ─▶ Crypto Module │
-                   │           ─▶ Audit Trail   │
-                   └────────────────────────────┘
-                        │              │
-                   ┌────▼───┐    ┌─────▼────┐
-                   │ SQLite │    │  JSONL   │
-                   │  (DB)  │    │ (Audit)  │
-                   └────────┘    └──────────┘
+The SDK automatically picks the right mode based on environment variables:
+
+```python
+# No env vars → Tier 1 (terminal prompt)
+# ACP_TELEGRAM_TOKEN set → Tier 2 (direct Telegram)
+# ACP_GATEWAY_URL set → Tier 3 (full gateway)
 ```
 
-## Deployment Models
+**Same code works at every tier.** Zero code changes when upgrading.
 
-### Development
-- Gateway runs locally (same machine as agent)
-- CLI adapter for terminal-based approval
-- SQLite in-memory database
-- No authentication required
+## Built-in Tool Classification
 
-### Production (Single User)
-- Gateway runs as a Docker container
-- Telegram adapter for mobile approval
-- SQLite file database
-- API key authentication
+Convention over configuration. The SDK classifies common tools automatically:
 
-### Production (Team)
-- Gateway behind a reverse proxy (nginx/Caddy)
-- Multiple approval channels
-- PostgreSQL database (planned)
-- mTLS between agent and gateway
-- Multiple approver support
+- `read_file`, `web_search` → data/low → auto-approve or quick prompt
+- `send_email`, `send_sms` → communication/high → always ask
+- `transfer_money`, `deploy_production` → financial/critical → always ask
+
+Users only override when they disagree with the default.
+
+## Gateway Components (Tier 3)
+
+When you need production-grade security:
+
+| Component | Purpose |
+|---|---|
+| **REST API** | Express server, all consent lifecycle endpoints |
+| **Policy Engine** | Declarative JSON rules, hot-reloadable |
+| **Consent Store** | SQLite with nonce tracking, session approvals |
+| **Crypto Module** | Ed25519 signing/verification via Node.js crypto |
+| **Audit Trail** | JSONL with SHA-256 hash chaining |
+| **Channel Adapters** | Telegram, webhook, CLI (pluggable) |
+
+## Security Boundaries
+
+The critical insight: **the consent check is outside the agent's trust boundary.**
+
+- **Tier 1**: Prompt goes to stderr, reads from stdin. Agent can't intercept.
+- **Tier 2**: Telegram API is unreachable by the agent process.
+- **Tier 3**: Gateway is a separate process with its own keys. Agent can't forge proofs.
+
+## Deployment
+
+| Scenario | Setup |
+|---|---|
+| Development | `pip install acp-sdk` + decorator. Done. |
+| Personal/Startup | Add `ACP_TELEGRAM_TOKEN` env var. |
+| Production | `npx acp-gateway` or `docker run acp-gateway` |
+| Team/Enterprise | Gateway + multiple channels + policies |

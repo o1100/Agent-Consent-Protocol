@@ -1,16 +1,23 @@
 """
-ACP Client — Core client for requesting and managing consent.
+ACP Client — Core consent client with automatic mode detection.
 
-Three modes, auto-detected based on environment:
+Three modes, auto-detected from environment:
 
-1. Local (default): Terminal prompt. Zero dependencies.
-2. Telegram: Set ACP_TELEGRAM_TOKEN → mobile approvals. Needs `requests`.
-3. Gateway: Set ACP_GATEWAY_URL → full production mode. Needs `requests`.
+  1. Local (default): Terminal prompt. Zero dependencies.
+  2. Telegram: Set ACP_TELEGRAM_TOKEN + ACP_TELEGRAM_CHAT_ID. Needs `requests`.
+  3. Gateway: Set ACP_GATEWAY_URL. Needs `requests`.
+
+Usage:
+    from acp import ACPClient
+
+    client = ACPClient()  # That's it. Mode auto-detected.
+    response = client.request_consent("send_email", {"to": "ceo@co.com"}, "Send report")
 """
 
 from __future__ import annotations
 
 import os
+import time
 from typing import Any, Callable, Dict, Optional
 
 from .types import (
@@ -31,20 +38,9 @@ class ACPClient:
     Agent Consent Protocol client.
 
     Automatically selects the best consent handler based on environment:
-    - ACP_GATEWAY_URL set → Gateway mode (Tier 3)
-    - ACP_TELEGRAM_TOKEN set → Direct Telegram mode (Tier 2)
-    - Neither → Local terminal prompt (Tier 1)
-
-    Usage:
-        client = ACPClient(agent_id="my-agent")
-        response = client.request_consent(
-            tool="send_email",
-            description="Send quarterly report to team@company.com",
-            parameters={"to": "team@company.com", "subject": "Q3 Report"},
-        )
-        if response.approved:
-            # proceed with action
-            ...
+      - ACP_GATEWAY_URL set → full gateway mode (Tier 3)
+      - ACP_TELEGRAM_TOKEN set → direct Telegram mode (Tier 2)
+      - Neither → local terminal prompt (Tier 1)
     """
 
     def __init__(
@@ -56,7 +52,7 @@ class ACPClient:
         gateway_api_key: Optional[str] = None,
         telegram_token: Optional[str] = None,
         telegram_chat_id: Optional[str] = None,
-        mode: Optional[str] = None,  # "local", "telegram", "gateway"
+        mode: Optional[str] = None,
         on_consent: Optional[Callable[["ConsentRequest"], "ConsentResponse"]] = None,
         auto_approve_low_risk: bool = False,
         timeout_seconds: int = 900,
@@ -74,7 +70,7 @@ class ACPClient:
         self.auto_approve_low_risk = auto_approve_low_risk
         self.timeout_seconds = timeout_seconds
 
-        # Determine mode
+        # Auto-detect mode
         if mode:
             self._mode = mode
         elif self.gateway_url:
@@ -86,14 +82,13 @@ class ACPClient:
 
     @property
     def mode(self) -> str:
-        """Current consent mode: 'local', 'telegram', or 'gateway'."""
         return self._mode
 
     def request_consent(
         self,
         tool: str,
-        description: str,
         parameters: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
         category: Optional[str] = None,
         risk_level: Optional[str] = None,
         estimated_impact: Optional[str] = None,
@@ -103,33 +98,17 @@ class ACPClient:
         """
         Request human consent for an action.
 
-        Args:
-            tool: Name of the tool/function to execute.
-            description: Human-readable description of what the action does.
-            parameters: Tool call parameters the human should review.
-            category: Action category (auto-detected if not provided).
-            risk_level: Risk level (auto-detected if not provided).
-            estimated_impact: Description of potential impact.
-            context: Additional context for the reviewer.
-            session_id: Session identifier for session-scoped approvals.
-
-        Returns:
-            ConsentResponse with the decision and optional proof.
+        Returns ConsentResponse. Check response.approved to see if the human said yes.
         """
-        # Auto-classify if needed
-        if not category or not risk_level:
-            auto_cat, auto_risk = classify_tool(tool)
-            if not category:
-                category = auto_cat.value
-            if not risk_level:
-                risk_level = auto_risk.value
+        # Auto-classify if not provided
+        auto_cat, auto_risk = classify_tool(tool, category, risk_level)
 
         action = ActionInfo(
             tool=tool,
-            description=description,
-            category=ActionCategory(category),
-            risk_level=RiskLevel(risk_level),
+            category=auto_cat,
+            risk_level=auto_risk,
             parameters=parameters or {},
+            description=description or f"Execute {tool}",
             estimated_impact=estimated_impact,
         )
 
@@ -151,13 +130,13 @@ class ACPClient:
         request = ConsentRequest(action=action, agent=agent, context=req_context)
 
         # Auto-approve low risk if configured
-        if self.auto_approve_low_risk and risk_level == "low":
+        if self.auto_approve_low_risk and auto_risk == RiskLevel.LOW:
             return ConsentResponse(
                 request_id=request.id,
                 decision=ConsentDecision.APPROVED,
                 approver_id="policy_auto",
                 channel="auto",
-                reason="Auto-approved: low risk action",
+                reason="Auto-approved: low risk",
                 auto_approved=True,
             )
 
@@ -165,7 +144,7 @@ class ACPClient:
         if self.on_consent:
             return self.on_consent(request)
 
-        # Route to appropriate handler
+        # Route to handler
         if self._mode == "gateway":
             return self._request_gateway(request)
         elif self._mode == "telegram":
@@ -174,12 +153,12 @@ class ACPClient:
             return self._request_local(request)
 
     def _request_local(self, request: ConsentRequest) -> ConsentResponse:
-        """Tier 1: Terminal prompt."""
+        """Tier 1: Terminal prompt. Zero deps."""
         from .local import prompt_local
         return prompt_local(request)
 
     def _request_telegram(self, request: ConsentRequest) -> ConsentResponse:
-        """Tier 2: Direct Telegram approval."""
+        """Tier 2: Direct Telegram. Needs `requests`."""
         from .telegram_handler import prompt_telegram
         return prompt_telegram(
             request,
@@ -189,21 +168,20 @@ class ACPClient:
         )
 
     def _request_gateway(self, request: ConsentRequest) -> ConsentResponse:
-        """Tier 3: Gateway API."""
+        """Tier 3: Full gateway. Needs `requests`."""
         try:
             import requests as http
         except ImportError:
             raise ImportError(
-                "The 'requests' library is required for gateway mode. "
+                "Gateway mode requires the 'requests' library. "
                 "Install with: pip install acp-sdk[remote]"
             )
 
-        headers = {"Content-Type": "application/json"}
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.gateway_api_key:
             headers["Authorization"] = f"Bearer {self.gateway_api_key}"
 
-        # Submit consent request
-        body = {
+        body: Dict[str, Any] = {
             "agent_id": request.agent.id,
             "agent_name": request.agent.name,
             "agent_framework": request.agent.framework,
@@ -214,12 +192,18 @@ class ACPClient:
         if request.context:
             body["context"] = request.context.to_dict()
 
-        url = self.gateway_url.rstrip("/")
-        resp = http.post(f"{url}/api/v1/consent/request", json=body, headers=headers, timeout=30)
+        url = self.gateway_url.rstrip("/")  # type: ignore[union-attr]
+
+        resp = http.post(
+            f"{url}/api/v1/consent/request",
+            json=body,
+            headers=headers,
+            timeout=30,
+        )
         resp.raise_for_status()
         data = resp.json()
 
-        # Check if auto-approved/denied
+        # Auto-approved or auto-denied by gateway policy
         if data.get("auto_approved"):
             return ConsentResponse(
                 request_id=data["request_id"],
@@ -230,19 +214,17 @@ class ACPClient:
                 auto_approved=True,
             )
 
-        if data.get("auto_denied"):
+        if data.get("auto_denied") or resp.status_code == 403:
             return ConsentResponse(
-                request_id=data["request_id"],
+                request_id=data.get("request_id", ""),
                 decision=ConsentDecision.DENIED,
                 approver_id="policy_auto",
                 channel="gateway",
-                reason=data.get("reason", "Auto-denied by policy"),
+                reason=data.get("reason", "Blocked by policy"),
             )
 
-        # Poll for response
+        # Poll for human response
         request_id = data["request_id"]
-        import time
-
         start = time.time()
         while time.time() - start < self.timeout_seconds:
             time.sleep(2)
@@ -257,7 +239,8 @@ class ACPClient:
             status = status_data.get("status")
             if status == "pending":
                 continue
-            elif status in ("approved", "denied", "expired"):
+
+            if status in ("approved", "denied", "expired"):
                 response_data = status_data.get("response")
                 if response_data:
                     return ConsentResponse.from_dict(response_data)
@@ -272,7 +255,6 @@ class ACPClient:
                     reason=f"Status: {status}",
                 )
 
-        # Timeout
         return ConsentResponse(
             request_id=request_id,
             decision=ConsentDecision.DENIED,

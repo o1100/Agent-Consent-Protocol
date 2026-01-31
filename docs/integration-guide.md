@@ -1,121 +1,155 @@
 # ACP Integration Guide
 
-## Quick Reference
-
-| Framework | SDK | Integration Pattern |
-|---|---|---|
-| Any (REST API) | curl/httpx/fetch | Direct HTTP calls |
-| Python (any) | `acp-sdk` | `@requires_consent` decorator |
-| LangChain/LangGraph | `acp-sdk[langchain]` | `LangChainACPMiddleware` |
-| Express.js | `@acp/sdk` | `requireConsent()` middleware |
-| MCP Servers | `@acp/sdk` | `wrapMCPTool()` wrapper |
-| OpenClaw | `acp-sdk` | Decorator or direct client |
-
-## Python Integration
+## Python — Zero Dependencies
 
 ### Install
 
 ```bash
 pip install acp-sdk
-# With crypto verification:
-pip install acp-sdk[crypto]
-# With LangChain support:
-pip install acp-sdk[langchain]
 ```
 
-### Decorator Pattern (Recommended)
+That's it. No server to run, no config files to create.
 
-The simplest way to protect functions:
+### Basic Decorator
 
 ```python
-from acp import ACPClient, requires_consent
+from acp import requires_consent
 
-client = ACPClient(
-    gateway_url="http://localhost:3000",
-    agent_id="my_agent",
-)
-
-@requires_consent(client, category="communication", risk_level="high")
-async def send_email(to: str, subject: str, body: str):
-    """This function requires human approval before execution."""
-    return await email_service.send(to, subject, body)
+@requires_consent("high")
+def send_email(to: str, subject: str, body: str):
+    """Send an email."""
+    ...
 ```
 
-### Direct Client Pattern
+The decorator intercepts the call, shows a terminal prompt (or Telegram message, or gateway request depending on env vars), and either runs the function or raises `ConsentDeniedError`.
 
-For more control over the consent flow:
+### Risk Levels
 
 ```python
-from acp import ACPClient, ConsentDenied, ConsentTimeout
+@requires_consent("low")      # 🟢 Quick prompt
+@requires_consent("medium")   # 🟡 Standard prompt
+@requires_consent("high")     # 🔴 Prominent warning
+@requires_consent("critical") # ⛔ Big scary warning
+```
 
-client = ACPClient(gateway_url="http://localhost:3000", agent_id="my_agent")
+### Category Override
 
-consent = await client.request_consent(
-    tool="deploy",
-    parameters={"service": "api", "version": "2.0"},
-    description="Deploy API v2.0 to production",
-    category="system",
-    risk_level="critical",
-    context={"conversation_summary": "User asked for production deploy"},
-)
+Category is auto-detected from the function name, but you can override:
+
+```python
+@requires_consent("critical", category="financial")
+def process_payment(amount, recipient):
+    ...
+```
+
+### Error Handling
+
+```python
+from acp import requires_consent, ConsentDeniedError
+
+@requires_consent("high")
+def send_email(to, subject, body):
+    ...
 
 try:
-    response = await consent.wait_for_decision()
-    # Execute the action with approved (possibly modified) params
-    params = response.apply_modifications({"service": "api", "version": "2.0"})
-    await deploy(**params)
-except ConsentDenied as e:
-    print(f"Denied: {e.reason}")
-except ConsentTimeout:
-    print("No response in time")
+    send_email("user@example.com", "Hello", "World")
+except ConsentDeniedError as e:
+    print(f"Human said no: {e}")
 ```
+
+### Direct Client (Advanced)
+
+```python
+from acp import ACPClient
+
+client = ACPClient(agent_id="my_agent")
+# Mode auto-detected: local → telegram → gateway
+
+response = client.request_consent(
+    tool="deploy_production",
+    parameters={"service": "api", "version": "2.0"},
+    description="Deploy API v2.0 to production",
+    risk_level="critical",
+    category="system",
+)
+
+if response.approved:
+    deploy(service="api", version="2.0")
+else:
+    print(f"Denied: {response.reason}")
+```
+
+### Upgrading to Telegram (Tier 2)
+
+```bash
+pip install acp-sdk[remote]
+export ACP_TELEGRAM_TOKEN="your-bot-token"
+export ACP_TELEGRAM_CHAT_ID="your-chat-id"
+```
+
+No code changes needed. Same decorator, now routes to Telegram.
+
+### Upgrading to Gateway (Tier 3)
+
+```bash
+npx acp-gateway  # Start the gateway
+export ACP_GATEWAY_URL="http://localhost:3000"
+```
+
+No code changes needed. Same decorator, now routes through the gateway.
 
 ### LangChain Integration
 
 ```python
 from langchain_core.tools import tool
-from acp import ACPClient, LangChainACPMiddleware
+from acp.middleware import LangChainACPMiddleware
 
-client = ACPClient(gateway_url="http://localhost:3000", agent_id="agent")
-middleware = LangChainACPMiddleware(client)
+middleware = LangChainACPMiddleware()
 
 @tool
 def send_email(to: str, subject: str, body: str) -> str:
     """Send an email."""
     return f"Sent to {to}"
 
-# Wrap the tool
-protected = middleware.wrap_tool(send_email, category="communication", risk_level="high")
-
-# Use in your agent
-# agent = create_react_agent(llm, [protected])
+protected_email = middleware.wrap_tool(send_email)
+# Auto-classified: send_email → communication/high
 ```
 
-## TypeScript Integration
-
-### Install
+## TypeScript
 
 ```bash
 npm install @acp/sdk
 ```
 
-### Express Middleware
+Requires a running gateway (Tier 3):
 
 ```typescript
-import express from 'express';
-import { ACPClient, requireConsent } from '@acp/sdk';
+import { ACPClient } from '@acp/sdk';
 
 const client = new ACPClient({
   gatewayUrl: 'http://localhost:3000',
   agentId: 'my_agent',
 });
 
-const app = express();
+const consent = await client.requestConsent({
+  tool: 'send_email',
+  parameters: { to: 'user@example.com' },
+  description: 'Send email',
+  riskLevel: 'high',
+});
+
+const response = await consent.waitForDecision();
+```
+
+### Express Middleware
+
+```typescript
+import { requireConsent } from '@acp/sdk';
 
 app.post('/api/deploy',
   requireConsent(client, { category: 'system', riskLevel: 'critical' }),
   (req, res) => {
-    // Only executes after human approval
+    // Only runs after human approval
     res.json({ deployed: true });
   }
 );
@@ -124,61 +158,27 @@ app.post('/api/deploy',
 ### MCP Tool Wrapper
 
 ```typescript
-import { ACPClient, wrapMCPTool } from '@acp/sdk';
-
-const client = new ACPClient({
-  gatewayUrl: 'http://localhost:3000',
-  agentId: 'mcp_agent',
-});
+import { wrapMCPTool } from '@acp/sdk';
 
 const handler = wrapMCPTool(client, {
   tool: 'send_email',
   category: 'communication',
   riskLevel: 'high',
-  handler: async (args) => {
-    return await sendEmail(args.to, args.subject, args.body);
-  },
+  handler: async (args) => sendEmail(args.to, args.subject, args.body),
 });
-```
-
-### Function Wrapper
-
-```typescript
-const client = new ACPClient({
-  gatewayUrl: 'http://localhost:3000',
-  agentId: 'my_agent',
-});
-
-const protectedSendTweet = client.wrap(
-  async (text: string) => twitter.post(text),
-  { tool: 'send_tweet', category: 'public', riskLevel: 'high' }
-);
-
-await protectedSendTweet('Hello world!');
 ```
 
 ## REST API (Any Language)
 
-For languages without an SDK, use the REST API directly:
-
 ```bash
-# 1. Request consent
+# Request consent
 curl -X POST http://localhost:3000/api/v1/consent/request \
   -H "Content-Type: application/json" \
-  -d '{
-    "agent_id": "my_agent",
-    "action": {
-      "tool": "send_email",
-      "category": "communication",
-      "risk_level": "high",
-      "parameters": {"to": "user@example.com"},
-      "description": "Send email"
-    }
-  }'
+  -d '{"agent_id":"my_agent","action":{"tool":"send_email","category":"communication","risk_level":"high","parameters":{"to":"user@co.com"},"description":"Send email"}}'
 
-# 2. Poll for decision
+# Poll for decision
 curl http://localhost:3000/api/v1/consent/REQUEST_ID
 
-# 3. Get proof
+# Get proof
 curl http://localhost:3000/api/v1/consent/REQUEST_ID/proof
 ```

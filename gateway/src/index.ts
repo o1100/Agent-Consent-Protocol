@@ -1,7 +1,9 @@
+#!/usr/bin/env node
 /**
  * ACP Gateway — Main Entry Point
  *
- * Starts the Agent Consent Protocol Gateway server.
+ * Run with: npx acp-gateway
+ * Or:       docker run -p 3000:3000 acp-gateway
  *
  * Configuration via environment variables:
  *   ACP_PORT            — Server port (default: 3000)
