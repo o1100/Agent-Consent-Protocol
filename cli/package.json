@@ -1,6 +1,6 @@
 {
   "name": "agent-2fa",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "2FA for AI Agents — Human authorization for any agentic system. Network-enforced, framework-agnostic.",
   "type": "module",
   "bin": {
