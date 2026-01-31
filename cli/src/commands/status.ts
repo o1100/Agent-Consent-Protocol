@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse as yamlParse } from 'yaml';
+import { CredentialVault } from '../sandbox/credentials.js';
 
 const ACP_DIR = path.join(process.env.HOME || '~', '.acp');
 
@@ -26,7 +27,8 @@ export async function statusCommand(): Promise<void> {
 
   // Check keys
   const keysDir = path.join(ACP_DIR, 'keys');
-  const hasKeys = fs.existsSync(path.join(keysDir, 'private.key')) &&
+  const privateKeyPath = path.join(keysDir, 'private.key');
+  const hasKeys = fs.existsSync(privateKeyPath) &&
                   fs.existsSync(path.join(keysDir, 'public.key'));
   console.log(`  Keys:     ${hasKeys ? '✅ Present' : '❌ Missing'}`);
 
@@ -34,15 +36,18 @@ export async function statusCommand(): Promise<void> {
   const policyPath = path.join(ACP_DIR, 'policy.yml');
   console.log(`  Policy:   ${fs.existsSync(policyPath) ? '✅ ' + policyPath : '❌ Missing'}`);
 
-  // Check vault
+  // Check vault — use CredentialVault to handle encrypted vaults
   const vaultPath = path.join(ACP_DIR, 'vault.json');
   if (fs.existsSync(vaultPath)) {
     try {
-      const vault = JSON.parse(fs.readFileSync(vaultPath, 'utf-8'));
-      const secretCount = Object.keys(vault.secrets || {}).length;
-      console.log(`  Vault:    ✅ ${secretCount} secret(s)`);
+      // Pass private key path so vault can decrypt
+      const vault = new CredentialVault(vaultPath, hasKeys ? privateKeyPath : undefined);
+      const secretCount = vault.list().length;
+      const vaultData = JSON.parse(fs.readFileSync(vaultPath, 'utf-8'));
+      const encrypted = vaultData.version === 2;
+      console.log(`  Vault:    ✅ ${secretCount} secret(s)${encrypted ? ' (encrypted)' : ' (plaintext)'}`);
     } catch {
-      console.log('  Vault:    ⚠️  Corrupted');
+      console.log('  Vault:    ⚠️  Could not read vault');
     }
   } else {
     console.log('  Vault:    ❌ Missing');

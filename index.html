@@ -57,7 +57,7 @@
         <span class="terminal-title">terminal</span>
       </div>
       <div class="terminal-body">
-        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">npm install</span> <span class="flag">-g</span> <span class="cmd">@acp/cli</span></div>
+        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">npm install</span> <span class="flag">-g</span> <span class="cmd">agent-2fa</span></div>
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp init</span> <span class="flag">--channel=telegram</span></div>
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp run</span> <span class="flag">--</span> <span class="cmd">openclaw gateway</span></div>
         <div class="terminal-line"><span class="comment"># ✓ Agent wrapped. Approval required for sensitive actions.</span></div>
@@ -310,7 +310,7 @@
                 Copy
               </button>
             </div>
-            <div class="code-body"><pre id="setup-code-1"><span class="syn-prompt">$</span> npm install -g @acp/cli</pre></div>
+            <div class="code-body"><pre id="setup-code-1"><span class="syn-prompt">$</span> npm install -g agent-2fa</pre></div>
           </div>
         </div>
       </div>
@@ -402,7 +402,7 @@
           <div class="prompt-body" id="prompt-basic-text">I need you to install and configure ACP (Agent Consent Protocol) on this system. ACP adds human approval to your tool calls so I can authorize sensitive actions.
 
 Steps:
-1. Run: npm install -g @acp/cli
+1. Run: npm install -g agent-2fa
 2. Run: acp init --channel=telegram
 3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
 4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>
@@ -418,7 +418,7 @@ Test it by trying to run a shell command. I should receive an approval request o
         <div class="prompt-content" data-group="prompt" id="prompt-advanced" style="display:none;">
           <div class="prompt-body" id="prompt-advanced-text">Install ACP and configure it with network isolation:
 
-1. npm install -g @acp/cli
+1. npm install -g agent-2fa
 2. acp init --channel=telegram --network-isolation
 3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
 4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>

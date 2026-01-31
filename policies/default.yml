@@ -39,4 +39,5 @@ rules:
 
   # Safety net: rate limit everything
   - match: { tool: "*" }
+    action: ask
     rate_limit: 20/minute
