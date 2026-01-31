@@ -1,10 +1,14 @@
 # How ACP Works
 
-## The Three Layers
+## The Layers
 
-ACP enforces consent through three independent layers. Even if one layer is bypassed, the others still protect you.
+ACP enforces consent through multiple layers. Not all layers are active by default — read this section to understand what's enforced in your setup.
 
-### Layer 1: Network Isolation
+### Layer 1: MCP Proxy (Always Active)
+
+This is the core of ACP. The MCP proxy intercepts every MCP tool call and routes it through the consent gate. This layer is **always active** when you run `acp run`.
+
+### Layer 2: Network Isolation (Optional — Requires Root or Docker)
 
 ```
 ┌─────────────────────────────────────────┐
@@ -20,14 +24,16 @@ ACP enforces consent through three independent layers. Even if one layer is bypa
 └─────────────────────────────────────────┘
 ```
 
-The agent runs in a restricted network environment. It can only communicate with the ACP proxy on localhost. All other outbound traffic is blocked — the agent cannot call APIs directly, cannot exfiltrate data, and cannot bypass ACP.
+**When enabled** (with `sudo acp run --network-isolation` or Docker), the agent can only communicate with the ACP proxy. All other outbound traffic is blocked.
+
+**When not enabled** (the default), there is no network enforcement. The agent can make direct HTTP requests, bypassing ACP entirely. In this mode, ACP only catches actions the agent routes through MCP.
 
 **Implementation varies by platform:**
-- **Linux (root):** Network namespaces + iptables rules
+- **Linux (root):** cgroups + iptables rules
 - **Docker:** Container in an isolated network, only ACP has internet
-- **Fallback:** Proxy-only mode with a warning (no network enforcement)
+- **Without root/Docker:** No isolation — proxy-only mode with a warning
 
-### Layer 2: MCP Proxy
+### Layer 3: MCP Proxy (Detail)
 
 ```
 Agent                    ACP Proxy                 Real MCP Server
@@ -60,7 +66,7 @@ The ACP proxy implements the MCP protocol. The agent connects to it thinking it'
 7. **Returns** the response to the agent
 8. **Logs** everything to the audit trail
 
-### Layer 3: Credential Isolation
+### Layer 4: Credential Isolation
 
 ```
 ┌──────────┐     ┌──────────────┐     ┌──────────┐
@@ -121,7 +127,17 @@ Even if the agent is compromised by prompt injection, it cannot extract credenti
 
 ACP puts the consent layer **outside** the agent:
 - Different process (can't be manipulated by the agent)
-- Different network (agent can't reach the internet)
 - Different key material (agent can't sign its own approvals)
+- Different network (when isolation is enabled — agent can't reach the internet)
 
 This is the same principle as hardware security modules (HSMs) in banking: the approval mechanism must be physically separate from the system being controlled.
+
+## Important Limitations
+
+1. **MCP-only interception.** ACP only intercepts MCP `tools/call` requests. If your agent makes direct HTTP calls, uses `child_process.exec()`, or interacts with the world through non-MCP interfaces, those actions bypass ACP completely.
+
+2. **Network isolation is not default.** Without `--network-isolation` (which requires root or Docker), the agent can make arbitrary network requests. ACP only catches what goes through the MCP proxy.
+
+3. **Same-user process model.** The agent runs as the same OS user as ACP. Without container isolation, the agent could theoretically read ACP's config, keys, and vault files.
+
+See [THREAT-MODEL.md](../THREAT-MODEL.md) for the full analysis and [SECURITY.md](../SECURITY.md) for known gaps.

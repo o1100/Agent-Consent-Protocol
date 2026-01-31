@@ -2,6 +2,8 @@
 
 ACP wraps processes — not frameworks. Any agent that runs as a command can be sandboxed with `acp run`.
 
+> **Important:** ACP only intercepts MCP tool calls. If your agent also makes direct HTTP requests, runs shell commands, or uses non-MCP interfaces, those actions are **not covered** by ACP. For full enforcement, enable [network isolation](network-isolation.md) (requires root/Docker).
+
 ## OpenClaw
 
 ```bash

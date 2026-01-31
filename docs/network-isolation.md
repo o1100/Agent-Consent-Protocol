@@ -1,6 +1,8 @@
 # Network Isolation
 
-ACP can restrict agent network access so it can only communicate with the ACP proxy. This is the strongest form of enforcement — even a compromised agent cannot bypass consent gates.
+> **Note:** Network isolation is **optional** and **not enabled by default**. It requires root access or Docker. Without it, ACP operates in proxy-only mode — MCP tool calls are intercepted, but the agent can make direct network requests that bypass ACP.
+
+When enabled, ACP restricts agent network access so it can only communicate with the ACP proxy. This is the strongest form of enforcement — even a compromised agent cannot bypass consent gates.
 
 ## Strategies by Platform
 
