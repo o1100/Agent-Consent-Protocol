@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ACP — Agent Consent Protocol | 2FA for AI Agents</title>
-  <meta name="description" content="One command. Any agent. Unbypassable. ACP is the universal human-in-the-loop approval layer for AI agents.">
+  <meta name="description" content="One command. Any agent. Human-controlled. ACP is the universal human-in-the-loop approval layer for AI agents.">
   <meta property="og:title" content="ACP — 2FA for AI Agents">
-  <meta property="og:description" content="One command. Any agent. Unbypassable. The universal human approval layer for AI agents.">
+  <meta property="og:description" content="One command. Any agent. Human-controlled. The universal human approval layer for AI agents.">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://agent2fa.dev/og-image.png">
   <meta property="og:url" content="https://agent2fa.dev">
@@ -49,7 +49,7 @@
       Open Source · Apache 2.0
     </div>
     <h1><span class="gradient-text">2FA for AI Agents</span></h1>
-    <p class="hero-subtitle">One command. Any agent. Unbypassable.</p>
+    <p class="hero-subtitle">One command. Any agent. Human-controlled.</p>
     <p class="hero-tagline"><strong>MCP</strong> is how agents use tools. <strong>ACP</strong> is how humans control agents.</p>
 
     <div class="terminal">
@@ -125,7 +125,7 @@
     <div class="fade-in">
       <span class="section-label">How It Works</span>
       <h2 class="section-title">Network-level <span class="gradient-text">agent containment</span></h2>
-      <p class="section-desc">ACP sits between your agent and the real world. Every sensitive action requires your explicit approval. The agent literally cannot bypass it.</p>
+      <p class="section-desc">ACP sits between your agent and the real world. Every sensitive action requires your explicit approval. The agent can't bypass it — tool calls are intercepted at the proxy level.</p>
     </div>
 
     <div class="flow-diagram fade-in">
@@ -413,7 +413,7 @@ Steps:
 6. Now configure ACP to wrap your main process. Update your startup command to:
    acp run -- <span class="placeholder">[your current startup command]</span>
 
-After this, any sensitive tool calls you make will require my approval via Telegram before executing. You cannot bypass this — it's enforced at the network level.
+After this, any sensitive tool calls you make will require my approval via Telegram before executing. Tool calls are intercepted at the proxy level before reaching real tools.
 
 Test it by trying to run a shell command. I should receive an approval request on Telegram.</div>
         </div>

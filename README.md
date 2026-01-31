@@ -4,7 +4,7 @@
 
 ### MCP is how agents use tools. ACP is how humans control agents.
 
-**One command. Any agent. Unbypassable.**
+**One command. Any agent. Human-controlled.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![npm: agent-2fa](https://img.shields.io/npm/v/agent-2fa.svg)](https://www.npmjs.com/package/agent-2fa)
@@ -161,7 +161,7 @@ acp secret remove OPENAI_API_KEY
 | Feature | ACP | MCP | LangGraph | CrewAI |
 |---|:---:|:---:|:---:|:---:|
 | Works with any agent/language | ✅ | — | ❌ | ❌ |
-| Agent can bypass | **No** | N/A | Yes | Yes |
+| Agent can bypass | **MCP calls: No** | N/A | Yes | Yes |
 | Network-level isolation | ✅ | ❌ | ❌ | ❌ |
 | Credential isolation | ✅ | ❌ | ❌ | ❌ |
 | Mobile approval (Telegram) | ✅ | ❌ | ❌ | ❌ |
