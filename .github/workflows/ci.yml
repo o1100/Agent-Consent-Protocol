@@ -47,7 +47,7 @@ jobs:
         run: |
           for f in policies/*.yml; do
             echo "Validating $f..."
-            node -e "
+            node --input-type=module -e "
               import { parse } from 'yaml';
               import { readFileSync } from 'fs';
               const content = readFileSync('$f', 'utf-8');
