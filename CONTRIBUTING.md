@@ -1,73 +1,78 @@
 # Contributing to ACP
 
-Thank you for your interest in contributing to the Agent Consent Protocol! 🎉
+Thanks for your interest in the Agent Consent Protocol! Here's how to get involved.
 
-## Ways to Contribute
-
-- **🐛 Report bugs** — Open an issue with a clear description
-- **💡 Suggest features** — Use the feature request template
-- **📖 Improve docs** — Fix typos, add examples, clarify explanations
-- **💻 Write code** — See the areas below
-- **🔐 Security review** — Find vulnerabilities responsibly
-- **🧪 Write tests** — More coverage is always welcome
-
-## Areas We Need Help With
-
-| Area | What's Needed |
-|---|---|
-| **Gateway** | WebSocket support, PostgreSQL storage, multi-approver |
-| **Channel Adapters** | Slack, Discord, Signal, push notifications, web dashboard |
-| **SDKs** | Go SDK, Rust SDK, Java SDK |
-| **Framework Integrations** | AutoGen, CrewAI, Vercel AI SDK |
-| **Testing** | E2E tests, load testing, fuzzing |
-| **Documentation** | Tutorials, video walkthroughs, translations |
-| **Security** | Threat modeling, crypto review, pen testing |
-
-## Development Setup
-
-### Gateway (Node.js)
+## Quick Start
 
 ```bash
-cd gateway
-npm install
-npm run dev  # Starts with hot reload
-npm test     # Run tests
-```
-
-### Python SDK
-
-```bash
-cd sdk/python
-pip install -e ".[dev]"
-pytest
-```
-
-### TypeScript SDK
-
-```bash
-cd sdk/typescript
+git clone https://github.com/agent-consent-protocol/acp
+cd acp/cli
 npm install
 npm run build
 ```
 
-## Pull Request Process
+## What We Need
 
-1. **Fork** the repo and create a feature branch
-2. **Write tests** for any new functionality
-3. **Follow existing code style** — clean, well-commented
-4. **Update documentation** if you're changing behavior
-5. **Open a PR** with a clear description of what and why
+### 🔌 Channel Adapters
+- Slack (workspace app with interactive messages)
+- Discord (bot with button interactions)
+- Signal (via signal-cli)
+- Web dashboard (real-time approval UI)
 
-## Code Style
+### 🐧 Sandbox Improvements
+- LD_PRELOAD-based socket interception (rootless Linux)
+- macOS pf firewall integration
+- eBPF-based network filtering
+- seccomp profiles for additional hardening
 
-- **TypeScript**: Use strict mode, proper types (no `any` where avoidable)
-- **Python**: Follow PEP 8, use type hints, docstrings on public functions
-- **Commits**: Clear, concise commit messages. Conventional commits preferred.
+### 🧪 Security Review
+- Audit the network isolation model
+- Review the credential vault encryption
+- Penetration testing of the MCP proxy
+- Fuzzing the policy parser
 
-## Security Disclosures
+### 📖 Documentation
+- Video tutorials
+- Blog posts and case studies
+- Framework-specific integration guides
 
-If you find a security vulnerability, please **do not** open a public issue. Instead, email security@acp.dev or open a private advisory on GitHub.
+## Development
+
+### Project Structure
+
+```
+cli/src/
+├── commands/       # CLI commands (init, run, secret, policy, status)
+├── proxy/          # MCP proxy and consent gate
+├── sandbox/        # Network isolation and process spawning
+├── channels/       # Approval channels (terminal, telegram, webhook)
+├── policy/         # YAML policy engine
+├── audit/          # Hash-chained audit logger
+└── crypto/         # Ed25519 keys and signing
+```
+
+### Running Tests
+
+```bash
+cd cli
+npm test
+```
+
+### Code Style
+
+- TypeScript with strict mode
+- No external dependencies unless absolutely necessary
+- Use Node.js built-in modules where possible
+- Every function gets a JSDoc comment
+
+## Pull Requests
+
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/my-feature`
+3. Make your changes
+4. Run tests: `npm test`
+5. Submit a PR with a clear description
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache 2.0 License.
+By contributing, you agree that your contributions will be licensed under Apache 2.0.

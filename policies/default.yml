@@ -1,0 +1,42 @@
+# ACP Default Policy — Sensible defaults for everyday use
+# Ask for dangerous actions, allow reads, rate-limit everything.
+
+version: "1"
+default_action: ask
+
+rules:
+  # Reading is always safe
+  - match: { category: read }
+    action: allow
+
+  # Writing to workspace is fine
+  - match:
+      tool: write_file
+      args:
+        path: "~/workspace/**"
+    action: allow
+
+  # Shell commands always need approval
+  - match: { tool: exec }
+    action: ask
+    level: high
+
+  # Sending messages needs approval
+  - match: { category: communication }
+    action: ask
+    level: high
+
+  # Financial actions: critical security
+  - match: { category: financial }
+    action: ask
+    level: critical
+    timeout: 300  # 5 min timeout, auto-deny
+
+  # Public posts need approval
+  - match: { category: public }
+    action: ask
+    level: high
+
+  # Safety net: rate limit everything
+  - match: { tool: "*" }
+    rate_limit: 20/minute

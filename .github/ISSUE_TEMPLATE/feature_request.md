@@ -1,27 +1,20 @@
 ---
 name: Feature Request
-about: Suggest a new feature or improvement for ACP
-title: '[Feature] '
+about: Suggest an idea for ACP
+title: "[Feature] "
 labels: enhancement
-assignees: ''
 ---
 
 ## Problem
-
-<!-- What problem does this feature solve? -->
+What problem does this solve?
 
 ## Proposed Solution
+How should it work?
 
-<!-- Describe the solution you'd like -->
+## Alternatives
+What else did you consider?
 
-## Alternatives Considered
-
-<!-- Any alternative approaches you've thought about? -->
-
-## Use Case
-
-<!-- Real-world scenario where this would be useful -->
-
-## Additional Context
-
-<!-- Screenshots, links, related issues, etc. -->
+## Context
+- ACP version:
+- Platform:
+- Use case:

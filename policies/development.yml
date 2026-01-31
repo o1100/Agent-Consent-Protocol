@@ -1,0 +1,39 @@
+# ACP Development Policy — Allow most, ask for dangerous
+# Good for local development where you trust the agent more.
+
+version: "1"
+default_action: allow
+
+rules:
+  # Financial actions still need approval
+  - match: { category: financial }
+    action: ask
+    level: critical
+    timeout: 300
+
+  # Sending external messages needs approval
+  - match: { category: communication }
+    action: ask
+    level: high
+
+  # Public posts need approval
+  - match: { category: public }
+    action: ask
+    level: high
+
+  # Shell commands: allow but rate-limit
+  - match: { tool: exec }
+    action: allow
+    rate_limit: 30/minute
+
+  # Delete operations need approval
+  - match: { tool: "delete_*" }
+    action: ask
+    level: high
+
+  # Deploy operations need approval
+  - match: { tool: "deploy_*" }
+    action: ask
+    level: critical
+
+  # Everything else: allow (default)

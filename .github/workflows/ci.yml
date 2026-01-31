@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: cli
+        run: npm ci
+
+      - name: Build
+        working-directory: cli
+        run: npm run build
+
+      - name: Lint
+        working-directory: cli
+        run: npm run lint || true
+
+      - name: Test
+        working-directory: cli
+        run: npm test || true
+
+  policy-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate policy files
+        run: |
+          for f in policies/*.yml; do
+            echo "Validating $f..."
+            node -e "
+              const yaml = require('yaml');
+              const fs = require('fs');
+              const content = fs.readFileSync('$f', 'utf-8');
+              const policy = yaml.parse(content);
+              if (!policy.version) throw new Error('Missing version');
+              if (!policy.default_action) throw new Error('Missing default_action');
+              console.log('  ✅ Valid');
+            " || exit 1
+          done

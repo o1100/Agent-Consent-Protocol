@@ -1,28 +1,31 @@
 # Dependencies
 node_modules/
+package-lock.json
+
+# Build output
+dist/
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Python
 __pycache__/
 *.pyc
-.pytest_cache/
-*.egg-info/
-dist/
-build/
+.venv/
 
-# Data (generated at runtime)
-data/
-*.db
-*.jsonl
+# ACP config (sensitive)
+.acp/
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Environment
-.env
-.env.local
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars

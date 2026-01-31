@@ -1,0 +1,42 @@
+# ACP Strict Policy — Paranoid mode
+# Ask for everything except reads. Financial actions are blocked by default.
+
+version: "1"
+default_action: ask
+
+rules:
+  # Only reads are auto-approved
+  - match: { category: read }
+    action: allow
+
+  # Financial actions: blocked unless explicitly approved
+  - match: { category: financial }
+    action: ask
+    level: critical
+    timeout: 120  # 2 min timeout
+
+  # Shell commands: always ask, critical level
+  - match: { tool: exec }
+    action: ask
+    level: critical
+
+  # System operations: always ask, high level
+  - match: { category: system }
+    action: ask
+    level: high
+
+  # Communication: always ask, high level
+  - match: { category: communication }
+    action: ask
+    level: high
+
+  # Public posts: always ask, critical level
+  - match: { category: public }
+    action: ask
+    level: critical
+
+  # Everything else: ask
+  - match: { tool: "*" }
+    action: ask
+    level: medium
+    rate_limit: 10/minute

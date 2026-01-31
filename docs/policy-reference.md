@@ -1,175 +1,235 @@
-# ACP Policy Reference
+# Policy Reference
 
-## Overview
+ACP policies are YAML files that control which tool calls are allowed, which need human approval, and which are blocked.
 
-Policies are declarative JSON files that control how the ACP Gateway handles each action. No code needed — just configure rules.
+## File Location
 
-## Policy Structure
+Active policy: `~/.acp/policy.yml`
 
-```json
-{
-  "type": "policy",
-  "version": "0.1.0",
-  "id": "policy_id",
-  "name": "Human-readable name",
-  "description": "What this policy does",
-  "rules": [...],
-  "defaults": {...}
-}
+Apply a policy:
+```bash
+acp policy apply policies/strict.yml
 ```
 
-## Rules
-
-Rules are evaluated in **priority order** (highest first). First match wins.
-
-### Rule Schema
-
-```json
-{
-  "id": "rule_unique_id",
-  "name": "Human-readable name",
-  "match": {
-    "risk_level": ["low", "medium", "high", "critical"],
-    "category": ["communication", "financial", "data", "system", "public", "identity", "physical"],
-    "agent_id": ["agent_1", "agent_2"]
-  },
-  "action_pattern": "send_*",
-  "decision": "always_ask",
-  "priority": 100,
-  "conditions": {...},
-  "constraints": {...},
-  "message": "Custom message to show when this rule triggers"
-}
+View current policy:
+```bash
+acp policy show
 ```
 
-### Match Criteria
+## Schema
 
-| Field | Type | Description |
-|---|---|---|
-| `risk_level` | string[] | Match actions with these risk levels |
-| `category` | string[] | Match actions in these categories |
-| `agent_id` | string[] | Match specific agents |
-| `action_pattern` | string | Glob pattern for tool names (e.g., `send_*`, `delete_*`) |
+```yaml
+version: "1"                    # Policy format version
+default_action: ask             # What to do when no rule matches
 
-If no match criteria are specified, the rule matches all actions.
+rules:
+  - match:                      # Criteria for matching tool calls
+      tool: "send_*"           # Tool name (glob patterns supported)
+      category: communication   # Action category
+      server: github            # MCP server name
+      args:                     # Argument matching
+        path: "~/safe/**"      # Glob patterns in values
+    action: allow               # What to do: allow, ask, deny
+    level: high                 # Risk level for "ask" actions
+    timeout: 300                # Seconds before auto-deny
+    rate_limit: "20/minute"    # Rate limiting
+    conditions:
+      time_of_day:
+        after: "09:00"
+        before: "17:00"
+        timezone: "UTC"
+```
 
-### Decision Types
+## Actions
 
-| Decision | Behavior |
+| Action | Behavior |
 |---|---|
-| `auto_approve` | Execute immediately without asking |
-| `ask_once_per_session` | Ask first time, remember for the session |
-| `ask_once_per_pattern` | Ask first time for a tool pattern, remember |
-| `always_ask` | Ask every single time |
-| `never_allow` | Block immediately, never execute |
+| `allow` | Forward to MCP server immediately. No human involved. |
+| `ask` | Request human approval. Block until response or timeout. |
+| `deny` | Block immediately. Return error to agent. |
 
-### Conditions
+## Match Criteria
 
-```json
-{
-  "conditions": {
-    "time_of_day": {
-      "after": "09:00",
-      "before": "17:00",
-      "timezone": "America/New_York"
-    }
-  }
-}
+### `tool` — Tool Name
+
+Matches the MCP tool name. Supports glob patterns:
+
+```yaml
+# Exact match
+- match: { tool: send_email }
+
+# Prefix match
+- match: { tool: "send_*" }
+
+# Suffix match
+- match: { tool: "*_file" }
+
+# Match everything
+- match: { tool: "*" }
 ```
 
-Rules with conditions only apply when conditions are met. If conditions aren't met, the rule is skipped and evaluation continues.
+### `category` — Action Category
 
-### Constraints
-
-```json
-{
-  "constraints": {
-    "max_amount": 10000,
-    "currency": "USD",
-    "daily_limit": 50000,
-    "require_reason": true,
-    "trust_duration_seconds": 3600,
-    "rate_limit": {
-      "max_actions": 10,
-      "window_seconds": 3600
-    },
-    "blocked_patterns": ["rm -rf", "DROP TABLE"],
-    "allowed_patterns": ["ls", "cat", "grep"]
-  }
-}
-```
-
-| Constraint | Description |
-|---|---|
-| `rate_limit` | Max actions per time window; exceeding triggers `always_ask` |
-| `blocked_patterns` | Substrings in parameters that cause `never_allow` |
-| `allowed_patterns` | Whitelist patterns (informational) |
-| `trust_duration_seconds` | How long a session approval lasts |
-| `max_amount` | Maximum amount for financial actions |
-| `daily_limit` | Maximum total amount per day |
-
-## Defaults
-
-```json
-{
-  "defaults": {
-    "unmatched_action": "always_ask",
-    "timeout_seconds": 900,
-    "reminder_seconds": 300,
-    "max_pending_requests": 20,
-    "notification_channels": ["telegram"]
-  }
-}
-```
-
-| Field | Description |
-|---|---|
-| `unmatched_action` | Decision for actions that don't match any rule |
-| `timeout_seconds` | Default timeout for consent requests |
-| `reminder_seconds` | Send a reminder after this many seconds |
-| `max_pending_requests` | Maximum concurrent pending requests |
-| `notification_channels` | Channels to deliver requests to |
-
-## Action Categories
+Built-in categories:
 
 | Category | Examples |
 |---|---|
-| `communication` | Email, Slack, SMS |
-| `financial` | Payments, transfers, orders |
-| `data` | File I/O, database queries |
-| `system` | Shell commands, deployments, config |
-| `public` | Social media, blog posts |
-| `identity` | Auth changes, profile updates |
-| `physical` | IoT, locks, drones |
+| `read` | `read_file`, `web_search`, `get_weather` |
+| `write` | `write_file`, `create_event`, `update_record` |
+| `communication` | `send_email`, `send_sms`, `message_user` |
+| `financial` | `transfer_money`, `charge_card`, `pay_invoice` |
+| `system` | `execute_shell`, `deploy_production`, `delete_database` |
+| `public` | `send_tweet`, `publish_post`, `release_package` |
+| `physical` | `unlock_door`, `toggle_switch` |
+
+ACP auto-classifies tools by name pattern. Override with explicit category in the match.
+
+### `args` — Argument Matching
+
+Match on tool call arguments:
+
+```yaml
+# Only allow writing to safe directories
+- match:
+    tool: write_file
+    args:
+      path: "~/workspace/**"
+  action: allow
+
+# Block emails to specific domains
+- match:
+    tool: send_email
+    args:
+      to: "*@competitor.com"
+  action: deny
+```
 
 ## Risk Levels
 
-| Level | Description | Default Behavior |
+When `action: ask`, the `level` field controls the urgency:
+
+| Level | Icon | Meaning |
 |---|---|---|
-| `low` | Easily reversible, limited impact | Auto-approve |
-| `medium` | Somewhat reversible, moderate impact | Ask once |
-| `high` | Difficult to reverse, significant impact | Always ask |
-| `critical` | Irreversible, severe impact | Always ask |
+| `low` | 🟢 | Low risk, quick approval |
+| `medium` | 🟡 | Moderate risk |
+| `high` | 🔴 | High risk, review carefully |
+| `critical` | ⛔ | Critical, requires careful review |
 
-## Example Policies
+## Timeout
 
-See the [examples/policies/](../examples/policies/) directory for complete policy files:
-- `default.json` — Balanced defaults for production
-- `strict.json` — High security, blocks dangerous patterns
-- `development.json` — Permissive for development/testing
+For `ask` actions, `timeout` specifies seconds before auto-deny:
 
-## Hot Reloading
+```yaml
+- match: { category: financial }
+  action: ask
+  level: critical
+  timeout: 300  # 5 minutes to decide, then auto-deny
+```
 
-When using a file-based policy, the Gateway checks for file changes on each request. Update the JSON file and changes take effect immediately — no restart needed.
+Default timeout: 120 seconds (configurable in `~/.acp/config.yml`).
 
-## API
+## Rate Limiting
 
-```bash
-# Get current policy
-curl http://localhost:3000/api/v1/policies
+Limit how often a tool can be called:
 
-# Update policy
-curl -X PUT http://localhost:3000/api/v1/policies \
-  -H "Content-Type: application/json" \
-  -d @policy.json
+```yaml
+- match: { tool: "*" }
+  rate_limit: "20/minute"   # Max 20 calls per minute
+
+- match: { tool: exec }
+  rate_limit: "5/minute"    # Max 5 shell commands per minute
+```
+
+Supported units: `second`, `minute`, `hour`, `day`.
+
+## Time-of-Day Conditions
+
+Restrict rules to certain hours:
+
+```yaml
+# Only auto-approve reads during business hours
+- match: { category: read }
+  action: allow
+  conditions:
+    time_of_day:
+      after: "09:00"
+      before: "17:00"
+      timezone: "UTC"
+```
+
+Outside the time window, the rule is skipped and the next rule is evaluated.
+
+## Rule Evaluation Order
+
+1. Rules are evaluated **top to bottom**
+2. **First matching rule wins**
+3. If no rule matches, `default_action` applies
+
+This means more specific rules should go before general ones:
+
+```yaml
+rules:
+  # Specific: allow reading workspace files
+  - match: { tool: read_file, args: { path: "~/workspace/**" } }
+    action: allow
+
+  # General: ask for all file reads (catches everything else)
+  - match: { tool: "read_*" }
+    action: ask
+
+  # Catch-all
+  - match: { tool: "*" }
+    action: deny
+```
+
+## Built-in Policies
+
+| File | Description |
+|---|---|
+| `policies/default.yml` | Ask for dangerous, allow reads |
+| `policies/strict.yml` | Ask for everything except reads |
+| `policies/development.yml` | Allow most, ask for dangerous |
+
+## Examples
+
+### Minimal Policy
+
+```yaml
+version: "1"
+default_action: ask
+rules: []
+# Everything requires approval
+```
+
+### Read-Only Agent
+
+```yaml
+version: "1"
+default_action: deny
+rules:
+  - match: { category: read }
+    action: allow
+```
+
+### Production API Agent
+
+```yaml
+version: "1"
+default_action: deny
+
+rules:
+  - match: { category: read }
+    action: allow
+
+  - match: { tool: "api_call", args: { method: "GET" } }
+    action: allow
+
+  - match: { tool: "api_call", args: { method: "POST" } }
+    action: ask
+    level: high
+
+  - match: { tool: "api_call", args: { method: "DELETE" } }
+    action: ask
+    level: critical
+    timeout: 60
 ```

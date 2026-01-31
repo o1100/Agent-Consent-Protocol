@@ -1,184 +1,121 @@
-# ACP Integration Guide
+# Integration Guide
 
-## Python — Zero Dependencies
+ACP wraps processes — not frameworks. Any agent that runs as a command can be sandboxed with `acp run`.
 
-### Install
-
-```bash
-pip install acp-sdk
-```
-
-That's it. No server to run, no config files to create.
-
-### Basic Decorator
-
-```python
-from acp import requires_consent
-
-@requires_consent("high")
-def send_email(to: str, subject: str, body: str):
-    """Send an email."""
-    ...
-```
-
-The decorator intercepts the call, shows a terminal prompt (or Telegram message, or gateway request depending on env vars), and either runs the function or raises `ConsentDeniedError`.
-
-### Risk Levels
-
-```python
-@requires_consent("low")      # 🟢 Quick prompt
-@requires_consent("medium")   # 🟡 Standard prompt
-@requires_consent("high")     # 🔴 Prominent warning
-@requires_consent("critical") # ⛔ Big scary warning
-```
-
-### Category Override
-
-Category is auto-detected from the function name, but you can override:
-
-```python
-@requires_consent("critical", category="financial")
-def process_payment(amount, recipient):
-    ...
-```
-
-### Error Handling
-
-```python
-from acp import requires_consent, ConsentDeniedError
-
-@requires_consent("high")
-def send_email(to, subject, body):
-    ...
-
-try:
-    send_email("user@example.com", "Hello", "World")
-except ConsentDeniedError as e:
-    print(f"Human said no: {e}")
-```
-
-### Direct Client (Advanced)
-
-```python
-from acp import ACPClient
-
-client = ACPClient(agent_id="my_agent")
-# Mode auto-detected: local → telegram → gateway
-
-response = client.request_consent(
-    tool="deploy_production",
-    parameters={"service": "api", "version": "2.0"},
-    description="Deploy API v2.0 to production",
-    risk_level="critical",
-    category="system",
-)
-
-if response.approved:
-    deploy(service="api", version="2.0")
-else:
-    print(f"Denied: {response.reason}")
-```
-
-### Upgrading to Telegram (Tier 2)
+## OpenClaw
 
 ```bash
-pip install acp-sdk[remote]
-export ACP_TELEGRAM_TOKEN="your-bot-token"
-export ACP_TELEGRAM_CHAT_ID="your-chat-id"
+acp run -- openclaw gateway
 ```
 
-No code changes needed. Same decorator, now routes to Telegram.
+OpenClaw's MCP tool calls will be intercepted by ACP. No code changes needed.
 
-### Upgrading to Gateway (Tier 3)
+## LangChain (Python)
 
 ```bash
-npx acp-gateway  # Start the gateway
-export ACP_GATEWAY_URL="http://localhost:3000"
+acp run -- python langchain_agent.py
 ```
 
-No code changes needed. Same decorator, now routes through the gateway.
-
-### LangChain Integration
+If your LangChain agent uses MCP tools, ACP will intercept them transparently. For LangChain agents using native tool calls, set `ACP_PROXY_URL` as the MCP server endpoint.
 
 ```python
-from langchain_core.tools import tool
-from acp.middleware import LangChainACPMiddleware
+# langchain_agent.py
+import os
+from langchain_mcp import MCPToolkit
 
-middleware = LangChainACPMiddleware()
-
-@tool
-def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email."""
-    return f"Sent to {to}"
-
-protected_email = middleware.wrap_tool(send_email)
-# Auto-classified: send_email → communication/high
+# ACP injects this automatically
+mcp_url = os.environ.get("ACP_PROXY_URL", "http://localhost:8443")
+toolkit = MCPToolkit(server_url=mcp_url)
 ```
 
-## TypeScript
+## AutoGen
 
 ```bash
-npm install @acp/sdk
+acp run -- python autogen_script.py
 ```
 
-Requires a running gateway (Tier 3):
+AutoGen agents that use MCP will route through ACP automatically.
 
-```typescript
-import { ACPClient } from '@acp/sdk';
-
-const client = new ACPClient({
-  gatewayUrl: 'http://localhost:3000',
-  agentId: 'my_agent',
-});
-
-const consent = await client.requestConsent({
-  tool: 'send_email',
-  parameters: { to: 'user@example.com' },
-  description: 'Send email',
-  riskLevel: 'high',
-});
-
-const response = await consent.waitForDecision();
-```
-
-### Express Middleware
-
-```typescript
-import { requireConsent } from '@acp/sdk';
-
-app.post('/api/deploy',
-  requireConsent(client, { category: 'system', riskLevel: 'critical' }),
-  (req, res) => {
-    // Only runs after human approval
-    res.json({ deployed: true });
-  }
-);
-```
-
-### MCP Tool Wrapper
-
-```typescript
-import { wrapMCPTool } from '@acp/sdk';
-
-const handler = wrapMCPTool(client, {
-  tool: 'send_email',
-  category: 'communication',
-  riskLevel: 'high',
-  handler: async (args) => sendEmail(args.to, args.subject, args.body),
-});
-```
-
-## REST API (Any Language)
+## CrewAI
 
 ```bash
-# Request consent
-curl -X POST http://localhost:3000/api/v1/consent/request \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id":"my_agent","action":{"tool":"send_email","category":"communication","risk_level":"high","parameters":{"to":"user@co.com"},"description":"Send email"}}'
-
-# Poll for decision
-curl http://localhost:3000/api/v1/consent/REQUEST_ID
-
-# Get proof
-curl http://localhost:3000/api/v1/consent/REQUEST_ID/proof
+acp run -- python crew.py
 ```
+
+Same approach — ACP wraps the process, intercepts MCP calls.
+
+## Custom Agents (Any Language)
+
+ACP works with any agent that can make HTTP requests to an MCP server:
+
+```bash
+# Node.js
+acp run -- node my_agent.js
+
+# Go
+acp run -- ./my-go-agent
+
+# Rust
+acp run -- ./my-rust-agent
+
+# Java
+acp run -- java -jar agent.jar
+```
+
+Your agent just needs to connect to the MCP server at `ACP_PROXY_URL`:
+
+```python
+# Python example
+import os, json, requests
+
+proxy_url = os.environ["ACP_PROXY_URL"]
+
+# Make a tool call through ACP
+response = requests.post(proxy_url, json={
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+        "name": "send_email",
+        "arguments": {
+            "to": "boss@company.com",
+            "subject": "Report"
+        }
+    }
+})
+
+result = response.json()
+# If the human approved, result contains the tool output
+# If denied, result contains an error
+```
+
+## Docker
+
+For production, use Docker Compose for proper network isolation:
+
+```bash
+# Copy the example
+cp examples/docker-compose.yml .
+
+# Set your credentials
+export TELEGRAM_TOKEN=xxx
+export CHAT_ID=yyy
+
+# Run
+docker compose up
+```
+
+See [examples/docker-compose.yml](../examples/docker-compose.yml).
+
+## Environment Variables
+
+ACP injects these into the agent process:
+
+| Variable | Value | Description |
+|---|---|---|
+| `ACP_PROXY_URL` | `http://127.0.0.1:8443` | MCP proxy address |
+| `MCP_SERVER_URL` | `http://127.0.0.1:8443` | Alias for MCP SDK compat |
+| `ACP_SANDBOX` | `1` | Indicates running inside ACP |
+| `ACP_VERSION` | `0.1.0` | ACP version |
+
+ACP also **strips** any environment variables that match vault secret keys, ensuring the agent never has direct access to credentials.
