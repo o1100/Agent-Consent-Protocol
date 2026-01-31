@@ -1,0 +1,27 @@
+{
+  "name": "@acp/sdk",
+  "version": "0.1.0",
+  "description": "Agent Consent Protocol SDK — 2FA for AI Agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test test/*.test.ts"
+  },
+  "keywords": ["ai", "agent", "consent", "authorization", "2fa", "mcp", "human-in-the-loop"],
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "peerDependencies": {
+    "express": "^4.21.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": { "optional": true }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

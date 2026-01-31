@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime
+*.db
+*.jsonl
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.js.map
+*.d.ts.map

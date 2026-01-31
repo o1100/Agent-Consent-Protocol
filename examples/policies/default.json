@@ -1,0 +1,55 @@
+{
+  "type": "policy",
+  "version": "0.1.0",
+  "id": "policy_default",
+  "name": "Default Policy",
+  "description": "Sensible defaults — auto-approve low risk, ask for everything else.",
+  "rules": [
+    {
+      "id": "rule_auto_approve_low",
+      "name": "Auto-approve low-risk actions",
+      "match": {
+        "risk_level": ["low"]
+      },
+      "decision": "auto_approve",
+      "priority": 10,
+      "message": "Low-risk action auto-approved by policy"
+    },
+    {
+      "id": "rule_ask_medium",
+      "name": "Ask once per session for medium-risk",
+      "match": {
+        "risk_level": ["medium"]
+      },
+      "decision": "ask_once_per_session",
+      "priority": 20,
+      "message": "Medium-risk action requires approval (once per session)"
+    },
+    {
+      "id": "rule_always_ask_high",
+      "name": "Always ask for high-risk actions",
+      "match": {
+        "risk_level": ["high"]
+      },
+      "decision": "always_ask",
+      "priority": 30,
+      "message": "High-risk action requires explicit approval"
+    },
+    {
+      "id": "rule_always_ask_critical",
+      "name": "Always ask for critical actions",
+      "match": {
+        "risk_level": ["critical"]
+      },
+      "decision": "always_ask",
+      "priority": 40,
+      "message": "Critical action requires explicit approval every time"
+    }
+  ],
+  "defaults": {
+    "unmatched_action": "always_ask",
+    "timeout_seconds": 900,
+    "reminder_seconds": 300,
+    "notification_channels": ["telegram"]
+  }
+}
