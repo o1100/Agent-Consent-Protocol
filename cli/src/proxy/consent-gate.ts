@@ -6,13 +6,18 @@
  *   1. Classify the action (category, risk level)
  *   2. Evaluate policy (allow / ask / deny)
  *   3. If "ask": send to human via channel adapter, wait for response
- *   4. If approved: inject credentials from vault
+ *   4. If approved: create cryptographic consent proof, inject credentials
  *   5. Return decision to proxy
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
 import { PolicyEngine } from '../policy/engine.js';
 import { CredentialVault } from '../sandbox/credentials.js';
 import { AuditLogger } from '../audit/logger.js';
+import { loadPrivateKey, canonicalJSON, sha256, generateNonce } from '../crypto/keys.js';
 
 // Channel adapter interface — implemented by terminal, telegram, webhook
 export interface ChannelAdapter {
@@ -41,6 +46,16 @@ interface ToolCallRequest {
   requestId: string | number;
 }
 
+export interface ConsentProof {
+  consent_id: string;
+  tool: string;
+  arguments_hash: string;
+  decision: string;
+  timestamp: string;
+  nonce: string;
+  signature: string;
+}
+
 interface ConsentResult {
   allowed: boolean;
   reason?: string;
@@ -48,6 +63,7 @@ interface ConsentResult {
   category?: string;
   riskLevel?: string;
   modifiedArgs?: Record<string, unknown>;
+  consent_proof?: ConsentProof;
 }
 
 interface ConsentGateOptions {
@@ -63,12 +79,69 @@ export class ConsentGate {
   private channel: ChannelAdapter;
   private vault: CredentialVault;
   private auditLogger: AuditLogger;
+  private privateKey: crypto.KeyObject | null = null;
+  private privateKeyHex: string | null = null;
 
   constructor(options: ConsentGateOptions) {
     this.policyEngine = options.policyEngine;
     this.channel = options.channel;
     this.vault = options.vault;
     this.auditLogger = options.auditLogger;
+    this.loadSigningKey();
+  }
+
+  /**
+   * Load the Ed25519 private key for consent proof signing.
+   */
+  private loadSigningKey(): void {
+    const keyPath = path.join(os.homedir(), '.acp', 'keys', 'private.key');
+    try {
+      if (fs.existsSync(keyPath)) {
+        this.privateKeyHex = fs.readFileSync(keyPath, 'utf-8').trim();
+        this.privateKey = loadPrivateKey(this.privateKeyHex);
+      }
+    } catch {
+      console.warn('  ⚠️  Could not load signing key from ~/.acp/keys/private.key');
+      console.warn('  Consent proofs will not be cryptographically signed.');
+    }
+  }
+
+  /**
+   * Create a cryptographic consent proof signed with the Ed25519 private key.
+   */
+  private createConsentProof(
+    consentId: string,
+    tool: string,
+    args: Record<string, unknown>,
+    decision: string
+  ): ConsentProof | undefined {
+    if (!this.privateKey) return undefined;
+
+    const timestamp = new Date().toISOString();
+    const nonce = generateNonce();
+    const argumentsHash = sha256(canonicalJSON(args));
+
+    const proofPayload = {
+      arguments_hash: argumentsHash,
+      consent_id: consentId,
+      decision,
+      nonce,
+      timestamp,
+      tool,
+    };
+
+    const canonical = canonicalJSON(proofPayload);
+    const signature = crypto.sign(null, Buffer.from(canonical, 'utf8'), this.privateKey);
+
+    return {
+      consent_id: consentId,
+      tool,
+      arguments_hash: argumentsHash,
+      decision,
+      timestamp,
+      nonce,
+      signature: signature.toString('hex'),
+    };
   }
 
   /**
@@ -78,7 +151,8 @@ export class ConsentGate {
    * 1. Classify the tool call
    * 2. Check policy
    * 3. Ask human if needed
-   * 4. Inject credentials if approved
+   * 4. Create consent proof if approved
+   * 5. Inject credentials if approved
    */
   async process(request: ToolCallRequest): Promise<ConsentResult> {
     // 1. Classify the tool call
@@ -116,7 +190,7 @@ export class ConsentGate {
       case 'deny': {
         return {
           allowed: false,
-          reason: `Denied by policy: tool "${request.tool}" is blocked${policyResult.ruleName ? ` (${policyResult.ruleName})` : ''}.`,
+          reason: policyResult.reason || `Denied by policy: tool "${request.tool}" is blocked${policyResult.ruleName ? ` (${policyResult.ruleName})` : ''}.`,
           category: classification.category,
           riskLevel: classification.riskLevel,
         };
@@ -137,18 +211,33 @@ export class ConsentGate {
           policyRule: policyResult.ruleName,
         });
 
-        // Log the decision
+        // Create consent proof if we have a signing key
+        const decisionStr = decision.approved ? 'approved' : 'denied';
+        const consentProof = this.createConsentProof(
+          consentId,
+          request.tool,
+          request.arguments,
+          decisionStr
+        );
+
+        // Log the decision with consent proof
         this.auditLogger.record({
           event_type: decision.approved ? 'consent_approved' : 'consent_denied',
           agent: 'sandbox-agent',
           tool: request.tool,
           category: classification.category,
           risk_level: classification.riskLevel,
-          decision: decision.approved ? 'approved' : 'denied',
+          decision: decisionStr,
           metadata: {
             consent_id: consentId,
             reason: decision.reason,
             channel: this.channel.name,
+            consent_proof: consentProof ? {
+              arguments_hash: consentProof.arguments_hash,
+              nonce: consentProof.nonce,
+              signature: consentProof.signature,
+              timestamp: consentProof.timestamp,
+            } : undefined,
           },
         });
 
@@ -162,6 +251,7 @@ export class ConsentGate {
             category: classification.category,
             riskLevel: classification.riskLevel,
             modifiedArgs: this.injectCredentials(args),
+            consent_proof: consentProof,
           };
         } else {
           return {
@@ -169,6 +259,7 @@ export class ConsentGate {
             reason: decision.reason || 'Denied by human.',
             category: classification.category,
             riskLevel: classification.riskLevel,
+            consent_proof: consentProof,
           };
         }
       }

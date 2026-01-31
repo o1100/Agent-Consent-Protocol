@@ -5,7 +5,7 @@ Thanks for your interest in the Agent Consent Protocol! Here's how to get involv
 ## Quick Start
 
 ```bash
-git clone https://github.com/agent-consent-protocol/acp
+git clone https://github.com/o1100/Agent-Consent-Protocol
 cd acp/cli
 npm install
 npm run build

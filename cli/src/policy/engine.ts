@@ -6,6 +6,8 @@
  *
  * Rules are evaluated in order (top to bottom). First match wins.
  * If no rule matches, default_action applies.
+ *
+ * Rate limiting is enforced via sliding window counters per tool name.
  */
 
 export interface PolicyRule {
@@ -48,6 +50,15 @@ export interface Classification {
   riskLevel: string;
 }
 
+interface RateLimitEntry {
+  timestamps: number[];
+}
+
+interface ParsedRateLimit {
+  count: number;
+  windowMs: number;
+}
+
 // Default classifications for common tool name patterns
 const PATTERN_CLASSIFICATIONS: Array<[RegExp, Classification]> = [
   [/^(read|get|list|search|query|fetch|find|check|view)_/, { category: 'read', riskLevel: 'low' }],
@@ -75,8 +86,17 @@ const EXACT_CLASSIFICATIONS: Record<string, Classification> = {
   git_commit:           { category: 'write', riskLevel: 'medium' },
 };
 
+const WINDOW_MS: Record<string, number> = {
+  second: 1_000,
+  minute: 60_000,
+  hour: 3_600_000,
+  day: 86_400_000,
+};
+
 export class PolicyEngine {
   private policy: Policy;
+  /** Sliding window rate limit tracker: tool name → timestamps of recent calls */
+  private rateLimitBuckets: Map<string, RateLimitEntry> = new Map();
 
   constructor(policy: Policy) {
     this.policy = policy;
@@ -103,15 +123,88 @@ export class PolicyEngine {
   }
 
   /**
+   * Parse a rate limit string like "20/minute" into count and window.
+   */
+  private parseRateLimit(rateLimit: string): ParsedRateLimit | null {
+    const match = /^(\d+)\/(second|minute|hour|day)$/.exec(rateLimit);
+    if (!match) return null;
+    return {
+      count: parseInt(match[1], 10),
+      windowMs: WINDOW_MS[match[2]],
+    };
+  }
+
+  /**
+   * Check if a tool call exceeds any applicable rate limit.
+   * Returns the rate limit reason string if exceeded, or null if OK.
+   *
+   * This does NOT record the call — recording happens separately after
+   * we know the call will proceed.
+   */
+  private checkRateLimit(tool: string, classification: Classification, args: Record<string, unknown>): string | null {
+    for (const rule of this.policy.rules) {
+      if (!rule.rate_limit) continue;
+
+      // Check if this rate limit rule matches the tool
+      if (!this.matchesRule(rule, tool, classification, args)) continue;
+
+      const parsed = this.parseRateLimit(rule.rate_limit);
+      if (!parsed) continue;
+
+      const now = Date.now();
+      const bucket = this.rateLimitBuckets.get(tool);
+      if (!bucket) continue; // No calls yet, can't be exceeded
+
+      // Count calls within the sliding window
+      const windowStart = now - parsed.windowMs;
+      const recentCalls = bucket.timestamps.filter(ts => ts > windowStart);
+
+      if (recentCalls.length >= parsed.count) {
+        return `Rate limit exceeded: ${rule.rate_limit} for "${tool}" (${recentCalls.length} calls in window)`;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Record a tool call for rate limiting purposes.
+   */
+  recordToolCall(tool: string): void {
+    let bucket = this.rateLimitBuckets.get(tool);
+    if (!bucket) {
+      bucket = { timestamps: [] };
+      this.rateLimitBuckets.set(tool, bucket);
+    }
+    bucket.timestamps.push(Date.now());
+
+    // Prune old entries (older than 24h to keep memory bounded)
+    const cutoff = Date.now() - 86_400_000;
+    bucket.timestamps = bucket.timestamps.filter(ts => ts > cutoff);
+  }
+
+  /**
    * Evaluate a tool call against the policy.
+   * Checks rate limits first, then matches rules.
    */
   evaluate(tool: string, args: Record<string, unknown>): PolicyResult {
     const classification = this.classify(tool);
 
+    // Check rate limits before normal rule evaluation
+    const rateLimitReason = this.checkRateLimit(tool, classification, args);
+    if (rateLimitReason) {
+      return {
+        action: 'deny',
+        reason: rateLimitReason,
+      };
+    }
+
+    // Record this call for future rate limiting
+    this.recordToolCall(tool);
+
     for (let i = 0; i < this.policy.rules.length; i++) {
       const rule = this.policy.rules[i];
 
-      // Skip rules without an action (e.g., rate_limit-only rules)
+      // Rules can be rate-limit-only (no action) — skip for action matching
       if (!rule.action) continue;
 
       if (this.matchesRule(rule, tool, classification, args)) {

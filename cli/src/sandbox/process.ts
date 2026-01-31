@@ -88,7 +88,7 @@ function buildSandboxEnv(options: SandboxOptions): Record<string, string> {
 
   // Mark that we're running inside ACP
   env.ACP_SANDBOX = '1';
-  env.ACP_VERSION = '0.1.0';
+  env.ACP_VERSION = '0.2.1';
 
   return env;
 }
