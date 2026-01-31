@@ -116,7 +116,7 @@ export class ConsentGate {
       case 'deny': {
         return {
           allowed: false,
-          reason: policyResult.reason || 'Denied by policy.',
+          reason: `Denied by policy: tool "${request.tool}" is blocked${policyResult.ruleName ? ` (${policyResult.ruleName})` : ''}.`,
           category: classification.category,
           riskLevel: classification.riskLevel,
         };

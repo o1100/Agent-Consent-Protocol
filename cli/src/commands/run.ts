@@ -21,6 +21,7 @@ import { PolicyEngine } from '../policy/engine.js';
 import { PolicyParser } from '../policy/parser.js';
 import { AuditLogger } from '../audit/logger.js';
 import { createChannel } from '../channels/terminal.js';
+import type { UpstreamServerConfig } from '../proxy/upstream-manager.js';
 
 const ACP_DIR = path.join(process.env.HOME || '~', '.acp');
 
@@ -28,6 +29,8 @@ interface RunOptions {
   networkIsolation: boolean;
   policy?: string;
   port: string;
+  upstream?: string[];
+  channel?: string;
 }
 
 export async function runCommand(
@@ -48,6 +51,11 @@ export async function runCommand(
 
   const config = yamlParse(fs.readFileSync(configPath, 'utf-8'));
   const port = parseInt(options.port || config.proxy?.port || '8443', 10);
+
+  // Override channel if specified
+  if (options.channel) {
+    config.channel = options.channel;
+  }
 
   // Load policy
   const policyPath = options.policy || config.defaults?.policy || path.join(ACP_DIR, 'policy.yml');
@@ -73,32 +81,65 @@ export async function runCommand(
     config,
   });
 
+  // Build upstream server list from CLI flags + config
+  const upstreamServers: UpstreamServerConfig[] = [];
+
+  // Add upstream servers from config file
+  const configUpstreams = config.proxy?.upstream_servers || [];
+  for (const us of configUpstreams) {
+    if (us.name && (us.command || us.url)) {
+      upstreamServers.push(us as UpstreamServerConfig);
+    }
+  }
+
+  // Add upstream servers from --upstream CLI flags
+  if (options.upstream) {
+    for (let i = 0; i < options.upstream.length; i++) {
+      const cmd = options.upstream[i];
+      // Generate a name from the command
+      const name = `cli-upstream-${i}`;
+      upstreamServers.push({ name, command: cmd });
+    }
+  }
+
   const proxy = new McpProxy({
     port,
     consentGate,
     auditLogger,
-    upstreamServers: config.proxy?.upstream_servers || [],
+    upstreamServers,
+    vault,
   });
 
   // Banner
   console.log('');
-  console.log('  🔐 ACP — Agent Consent Protocol');
-  console.log('  ─────────────────────────────────');
-  console.log(`  Proxy:    http://127.0.0.1:${port}`);
-  console.log(`  Policy:   ${policyPath}`);
-  console.log(`  Channel:  ${config.channel}`);
-  console.log(`  Audit:    ${path.join(ACP_DIR, 'audit.jsonl')}`);
-  console.log(`  Command:  ${command.join(' ')}`);
-  if (options.networkIsolation) {
-    console.log('  Network:  🔒 Isolated (agent can only reach ACP proxy)');
-  } else {
-    console.log('  Network:  ⚠️  No isolation (proxy-only mode)');
+  console.log('  🔐 ACP — Agent Consent Protocol v0.2.1');
+  console.log('  ─────────────────────────────────────────');
+  console.log(`  Proxy:      http://127.0.0.1:${port}`);
+  console.log(`  Policy:     ${policyPath}`);
+  console.log(`  Channel:    ${config.channel}`);
+  console.log(`  Audit:      ${path.join(ACP_DIR, 'audit.jsonl')}`);
+  console.log(`  Command:    ${command.join(' ')}`);
+  if (upstreamServers.length > 0) {
+    console.log(`  Upstreams:  ${upstreamServers.length} server(s)`);
+    for (const us of upstreamServers) {
+      console.log(`    → ${us.name}: ${us.command || us.url}`);
+    }
   }
-  console.log('  ─────────────────────────────────');
+  if (options.networkIsolation) {
+    console.log('  Network:    🔒 Isolated (agent can only reach ACP proxy)');
+  } else {
+    console.log('  Network:    ⚠️  No isolation (proxy-only mode)');
+  }
+  console.log('  ─────────────────────────────────────────');
   console.log('');
 
-  // Start proxy
-  await proxy.start();
+  // Start proxy (this also starts upstream servers)
+  try {
+    await proxy.start();
+  } catch (err) {
+    console.error(`  ❌ Failed to start proxy: ${(err as Error).message}`);
+    process.exit(1);
+  }
 
   // Set up network isolation if requested
   let cleanupNetwork: (() => Promise<void>) | undefined;
@@ -131,6 +172,7 @@ export async function runCommand(
       port,
       network_isolation: !!cleanupNetwork,
       channel: config.channel,
+      upstream_count: upstreamServers.length,
     },
   });
 

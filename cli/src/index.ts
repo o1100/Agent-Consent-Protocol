@@ -28,7 +28,7 @@ const program = new Command();
 program
   .name('acp')
   .description('Agent Consent Protocol — 2FA for AI Agents')
-  .version('0.1.0');
+  .version('0.2.1');
 
 // acp init
 program
@@ -44,6 +44,8 @@ program
   .option('--network-isolation', 'Enable network isolation (Linux, requires root)', false)
   .option('--policy <file>', 'Policy file to use')
   .option('--port <port>', 'ACP proxy port', '8443')
+  .option('--upstream <command>', 'Upstream MCP server command (repeatable)', (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
+  .option('--channel <type>', 'Override approval channel: prompt, telegram, webhook')
   .allowUnknownOption(true)
   .argument('[command...]', 'Agent command to run')
   .action(runCommand);

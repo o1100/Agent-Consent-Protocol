@@ -111,6 +111,9 @@ export class PolicyEngine {
     for (let i = 0; i < this.policy.rules.length; i++) {
       const rule = this.policy.rules[i];
 
+      // Skip rules without an action (e.g., rate_limit-only rules)
+      if (!rule.action) continue;
+
       if (this.matchesRule(rule, tool, classification, args)) {
         return {
           action: rule.action,

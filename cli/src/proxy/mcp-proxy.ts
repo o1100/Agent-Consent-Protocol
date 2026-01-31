@@ -4,23 +4,24 @@
  * Implements an MCP-compatible HTTP/SSE server that the agent connects to.
  * Intercepts tools/call requests and routes them through the consent gate.
  * All other MCP methods (tools/list, resources/*, prompts/*) are forwarded.
+ *
+ * Supports upstream MCP servers via:
+ * - Stdio transport (spawn process, pipe JSON-RPC)
+ * - HTTP transport (forward to HTTP endpoint)
  */
 
 import http from 'node:http';
 import { ConsentGate } from './consent-gate.js';
+import { UpstreamManager, UpstreamServerConfig } from './upstream-manager.js';
 import { AuditLogger } from '../audit/logger.js';
-
-interface UpstreamServer {
-  name: string;
-  command?: string;
-  url?: string;
-}
+import { CredentialVault } from '../sandbox/credentials.js';
 
 interface McpProxyOptions {
   port: number;
   consentGate: ConsentGate;
   auditLogger: AuditLogger;
-  upstreamServers: UpstreamServer[];
+  upstreamServers: UpstreamServerConfig[];
+  vault?: CredentialVault;
 }
 
 interface JsonRpcRequest {
@@ -53,22 +54,37 @@ export class McpProxy {
   private port: number;
   private consentGate: ConsentGate;
   private auditLogger: AuditLogger;
-  private upstreamServers: UpstreamServer[];
-
-  // Tool registry: populated from upstream servers
-  private tools: Map<string, { name: string; description: string; inputSchema: unknown; server: string }> = new Map();
+  private upstreamManager: UpstreamManager;
+  private upstreamConfigs: UpstreamServerConfig[];
+  private ready = false;
 
   constructor(options: McpProxyOptions) {
     this.port = options.port;
     this.consentGate = options.consentGate;
     this.auditLogger = options.auditLogger;
-    this.upstreamServers = options.upstreamServers;
+    this.upstreamConfigs = options.upstreamServers;
+    this.upstreamManager = new UpstreamManager(options.vault);
   }
 
   /**
    * Start the MCP proxy server.
    */
   async start(): Promise<void> {
+    // Start upstream servers first
+    for (const config of this.upstreamConfigs) {
+      try {
+        await this.upstreamManager.addServer(config);
+      } catch (err) {
+        console.error(`  ❌ Failed to start upstream "${config.name}": ${(err as Error).message}`);
+      }
+    }
+
+    // Discover tools from all upstreams
+    if (this.upstreamManager.hasUpstreams) {
+      await this.upstreamManager.discoverTools();
+    }
+
+    // Create HTTP server
     this.server = http.createServer(async (req, res) => {
       // CORS headers for MCP clients
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -107,8 +123,19 @@ export class McpProxy {
       }
     });
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      this.server!.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`  ❌ Port ${this.port} is already in use.`);
+          console.error(`  Try: acp run --port ${this.port + 1} -- <command>`);
+          reject(err);
+        } else {
+          reject(err);
+        }
+      });
+
       this.server!.listen(this.port, '127.0.0.1', () => {
+        this.ready = true;
         console.log(`  🔌 ACP proxy listening on http://127.0.0.1:${this.port}`);
         resolve();
       });
@@ -116,9 +143,12 @@ export class McpProxy {
   }
 
   /**
-   * Stop the proxy server.
+   * Stop the proxy server and all upstream servers.
    */
   async stop(): Promise<void> {
+    this.ready = false;
+    await this.upstreamManager.stopAll();
+
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => resolve());
@@ -136,6 +166,10 @@ export class McpProxy {
       case 'initialize':
         return this.handleInitialize(request);
 
+      case 'notifications/initialized':
+        // Client notification, acknowledge silently
+        return { jsonrpc: '2.0', id: request.id, result: {} };
+
       case 'tools/list':
         return this.handleToolsList(request);
 
@@ -146,7 +180,6 @@ export class McpProxy {
         return { jsonrpc: '2.0', id: request.id, result: {} };
 
       default:
-        // Forward unknown methods or return method not found
         return {
           jsonrpc: '2.0',
           id: request.id,
@@ -172,7 +205,7 @@ export class McpProxy {
         },
         serverInfo: {
           name: 'acp-proxy',
-          version: '0.1.0',
+          version: '0.2.1',
         },
       },
     };
@@ -182,10 +215,10 @@ export class McpProxy {
    * Handle tools/list — returns aggregated tools from all upstream servers.
    */
   private handleToolsList(request: JsonRpcRequest): JsonRpcResponse {
-    const tools = Array.from(this.tools.values()).map(t => ({
+    const tools = this.upstreamManager.getTools().map(t => ({
       name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
+      description: t.description || '',
+      inputSchema: t.inputSchema || { type: 'object', properties: {} },
     }));
 
     return {
@@ -201,7 +234,7 @@ export class McpProxy {
    * 1. Intercept the tool call
    * 2. Run through policy engine
    * 3. If "ask": send to consent gate, wait for human decision
-   * 4. If approved: inject credentials, forward to upstream
+   * 4. If approved: forward to upstream, return real result
    * 5. If denied: return error to agent
    * 6. Log everything
    */
@@ -240,9 +273,50 @@ export class McpProxy {
       });
 
       if (result.allowed) {
-        // Tool call was approved — return the result
-        // In a full implementation, this would forward to the upstream MCP server
-        // For now, we return the consent gate's result
+        // Tool call was approved — forward to upstream
+        const finalArgs = result.modifiedArgs || args;
+
+        let toolResult: unknown;
+
+        if (this.upstreamManager.hasUpstreams) {
+          // Forward to the actual upstream MCP server
+          try {
+            toolResult = await this.upstreamManager.callTool(toolName, finalArgs);
+          } catch (err) {
+            const errMsg = (err as Error).message;
+            console.error(`  ❌ Upstream call failed: ${errMsg}`);
+
+            this.auditLogger.record({
+              event_type: 'tool_call_error',
+              agent: 'sandbox-agent',
+              tool: toolName,
+              category: result.category || 'unknown',
+              risk_level: result.riskLevel || 'medium',
+              decision: 'error',
+              metadata: { error: errMsg },
+            });
+
+            return {
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32603,
+                message: `Upstream error: ${errMsg}`,
+              },
+            };
+          }
+        } else {
+          // No upstream servers — return a placeholder
+          toolResult = {
+            content: [
+              {
+                type: 'text',
+                text: `Tool "${toolName}" approved but no upstream server configured.`,
+              },
+            ],
+          };
+        }
+
         this.auditLogger.record({
           event_type: 'tool_call_forwarded',
           agent: 'sandbox-agent',
@@ -250,25 +324,18 @@ export class McpProxy {
           category: result.category || 'unknown',
           risk_level: result.riskLevel || 'medium',
           decision: 'approved',
-          metadata: { arguments: result.modifiedArgs || args },
+          metadata: { arguments: finalArgs },
         });
 
         return {
           jsonrpc: '2.0',
           id: request.id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: result.response || `Tool "${toolName}" executed successfully.`,
-              },
-            ],
-          },
+          result: toolResult,
         };
       } else {
         // Tool call was denied
         this.auditLogger.record({
-          event_type: 'tool_call_intercepted',
+          event_type: 'tool_call_denied',
           agent: 'sandbox-agent',
           tool: toolName,
           category: result.category || 'unknown',

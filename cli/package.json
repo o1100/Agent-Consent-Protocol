@@ -1,6 +1,6 @@
 {
   "name": "@acp/cli",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "2FA for AI Agents — Human authorization for any agentic system",
   "type": "module",
   "bin": {
