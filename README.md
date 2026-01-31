@@ -17,6 +17,12 @@
 
 ---
 
+> [!WARNING]
+> **Experimental prototype — not production hardened.**
+> This is an early research implementation of agent consent enforcement. It has not undergone formal security review and should not be used to protect high-risk systems yet. See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for known limitations.
+
+---
+
 ## The Problem
 
 AI agents can send emails, run shell commands, transfer money, and deploy to production — but there's no universal way to ensure a human said "yes" first. Existing frameworks bury consent in application code where agents can bypass it.
@@ -59,8 +65,8 @@ Agent  →  ACP Proxy  →  Policy Engine  →  Human Approval  →  Real MCP Se
 
 **Three layers of enforcement:**
 
-1. **Network Isolation** — Agent can only reach the ACP proxy. No direct internet access.
-2. **MCP Proxy** — All tool calls intercepted. Policy engine decides: allow, ask, or deny.
+1. **Network Isolation** — With root/Docker, agent can only reach the ACP proxy. Without it, operates in proxy-only mode. See [THREAT-MODEL.md](THREAT-MODEL.md).
+2. **MCP Proxy** — All MCP tool calls intercepted. Policy engine decides: allow, ask, or deny.
 3. **Credential Isolation** — API keys stored in ACP's encrypted vault (AES-256-GCM). Agent never sees them.
 
 **Cryptographic guarantees:**
@@ -162,7 +168,7 @@ acp secret remove OPENAI_API_KEY
 |---|:---:|:---:|:---:|:---:|
 | Works with any agent/language | ✅ | — | ❌ | ❌ |
 | Agent can bypass | **MCP calls: No** | N/A | Yes | Yes |
-| Network-level isolation | ✅ | ❌ | ❌ | ❌ |
+| Network-level isolation | ✅ (root/Docker) | ❌ | ❌ | ❌ |
 | Credential isolation | ✅ | ❌ | ❌ | ❌ |
 | Mobile approval (Telegram) | ✅ | ❌ | ❌ | ❌ |
 | Ed25519 signed consent proofs | ✅ | ❌ | ❌ | ❌ |
@@ -212,6 +218,8 @@ npm test    # 56 tests
 - [Policy Reference](docs/policy-reference.md)
 - [Integration Guide](docs/integration-guide.md)
 - [Protocol Spec](SPEC.md)
+- [Security Policy](SECURITY.md)
+- [Threat Model](THREAT-MODEL.md)
 
 ## Contributing
 
@@ -232,6 +240,6 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 **Agents use tools. Humans authorize them.**
 
-[⭐ Star on GitHub](https://github.com/o1100/Agent-Consent-Protocol) · [🌐 Website](https://agent2fa.dev) · [🐦 Twitter](https://x.com/Agent2FA)
+[⭐ Star on GitHub](https://github.com/o1100/Agent-Consent-Protocol) · [🌐 Website](https://agent2fa.dev)
 
 </div>
