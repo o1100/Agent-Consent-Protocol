@@ -112,7 +112,7 @@ export async function runCommand(
 
   // Banner
   console.log('');
-  console.log('  🔐 ACP — Agent Consent Protocol v0.2.1');
+  console.log('  🔐 ACP — Agent Consent Protocol v0.2.4');
   console.log('  ─────────────────────────────────────────');
   console.log(`  Proxy:      http://127.0.0.1:${port}`);
   console.log(`  Policy:     ${policyPath}`);

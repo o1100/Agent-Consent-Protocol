@@ -226,7 +226,7 @@ class StdioUpstream {
       capabilities: {},
       clientInfo: {
         name: 'acp-proxy',
-        version: '0.2.1',
+        version: '0.2.4',
       },
     });
 
@@ -337,7 +337,7 @@ class HttpUpstream {
       capabilities: {},
       clientInfo: {
         name: 'acp-proxy',
-        version: '0.2.1',
+        version: '0.2.4',
       },
     });
 
