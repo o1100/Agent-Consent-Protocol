@@ -44,8 +44,9 @@ jobs:
         run: npm ci
 
       - name: Validate policy files
+        working-directory: cli
         run: |
-          for f in policies/*.yml; do
+          for f in ../policies/*.yml; do
             echo "Validating $f..."
             node --input-type=module -e "
               import { parse } from 'yaml';
