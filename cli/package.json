@@ -1,20 +1,22 @@
 {
-  "name": "@acp/cli",
+  "name": "agent-2fa",
   "version": "0.2.1",
-  "description": "2FA for AI Agents — Human authorization for any agentic system",
+  "description": "2FA for AI Agents — Human authorization for any agentic system. Network-enforced, framework-agnostic.",
   "type": "module",
   "bin": {
-    "acp": "./dist/index.js"
+    "acp": "./dist/index.js",
+    "agent-2fa": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
-    "lint": "eslint src/",
-    "test": "tsc && node --test dist/tests/*.test.js"
+    "test": "tsc && node --test dist/tests/*.test.js",
+    "prepublishOnly": "npm run build && npm test"
   },
   "files": [
-    "dist/"
+    "dist/",
+    "!dist/tests/"
   ],
   "keywords": [
     "ai",
@@ -24,10 +26,23 @@
     "mcp",
     "2fa",
     "sandbox",
-    "security"
+    "security",
+    "ed25519",
+    "audit",
+    "human-in-the-loop",
+    "ai-safety"
   ],
   "author": "Agent Consent Protocol Contributors",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/o1100/Agent-Consent-Protocol.git",
+    "directory": "cli"
+  },
+  "homepage": "https://agent2fa.dev",
+  "bugs": {
+    "url": "https://github.com/o1100/Agent-Consent-Protocol/issues"
+  },
   "dependencies": {
     "commander": "^12.1.0",
     "yaml": "^2.6.0"
