@@ -14,6 +14,7 @@
  */
 
 import { execSync, spawn, ChildProcess } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
 
 export interface DockerOptions {
@@ -197,6 +198,16 @@ export function runContained(options: DockerOptions): ChildProcess {
   const httpProxyUrl = `http://${proxyHost}:${httpProxyPort}`;
   const mcpProxyUrl = `http://${proxyHost}:${proxyPort}`;
 
+  // Run container as the workspace directory's owner UID/GID so file
+  // writes work even with --cap-drop=ALL (which drops DAC_OVERRIDE).
+  let userFlag: string[] = [];
+  try {
+    const stat = fs.statSync(workspaceDir);
+    userFlag = ['--user', `${stat.uid}:${stat.gid}`];
+  } catch {
+    // Fall back to running as root if stat fails
+  }
+
   // In interactive mode (-it), stdin is passed to the container so the
   // agent can accept user input (e.g. Claude Code). This means ACP's
   // terminal consent channel can't use stdin — a non-terminal channel
@@ -205,6 +216,7 @@ export function runContained(options: DockerOptions): ChildProcess {
   const args = [
     'run', '--rm',
     ...(interactive ? ['-it'] : []),
+    ...userFlag,
     `--network=${NETWORK_NAME}`,
     // On macOS/Windows Docker Desktop, the --internal flag can't be used
     // (it blocks routes to the host too). Instead we use a regular network
@@ -213,8 +225,8 @@ export function runContained(options: DockerOptions): ChildProcess {
       ? ['--add-host=acp-host:host-gateway', '--dns=127.0.0.1']
       : []),
     '--read-only',
-    '--tmpfs', '/tmp:size=100m,noexec',
-    '--tmpfs', '/root:size=50m',
+    '--tmpfs', '/tmp:size=100m',
+    '--tmpfs', '/home:size=50m',
     '--cap-drop=ALL',
     '--security-opt=no-new-privileges',
     `--pids-limit=${pidsLimit}`,
