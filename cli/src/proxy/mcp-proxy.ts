@@ -5,6 +5,11 @@
  * Intercepts tools/call requests and routes them through the consent gate.
  * All other MCP methods (tools/list, resources/*, prompts/*) are forwarded.
  *
+ * Also serves:
+ * - POST /acp/intercept — general-purpose interception endpoint for
+ *   shell wrappers, HTTP proxy, Claude Code hooks, etc.
+ * - GET /acp/health — health check endpoint
+ *
  * Supports upstream MCP servers via:
  * - Stdio transport (spawn process, pipe JSON-RPC)
  * - HTTP transport (forward to HTTP endpoint)
@@ -15,6 +20,8 @@ import { ConsentGate } from './consent-gate.js';
 import { UpstreamManager, UpstreamServerConfig } from './upstream-manager.js';
 import { AuditLogger } from '../audit/logger.js';
 import { CredentialVault } from '../sandbox/credentials.js';
+import type { InterceptionRequest, InterceptionResponse } from '../interceptors/types.js';
+import { generateRequestId } from '../crypto/keys.js';
 
 interface McpProxyOptions {
   port: number;
@@ -22,6 +29,7 @@ interface McpProxyOptions {
   auditLogger: AuditLogger;
   upstreamServers: UpstreamServerConfig[];
   vault?: CredentialVault;
+  listenAddress?: string;
 }
 
 interface JsonRpcRequest {
@@ -48,6 +56,8 @@ interface JsonRpcResponse {
  * The agent sees this as a normal MCP server. Under the hood,
  * every tools/call goes through the consent gate before reaching
  * the real MCP server.
+ *
+ * Also serves the /acp/intercept endpoint for non-MCP interceptions.
  */
 export class McpProxy {
   private server: http.Server | null = null;
@@ -57,6 +67,7 @@ export class McpProxy {
   private upstreamManager: UpstreamManager;
   private upstreamConfigs: UpstreamServerConfig[];
   private ready = false;
+  private listenAddress: string;
 
   constructor(options: McpProxyOptions) {
     this.port = options.port;
@@ -64,6 +75,7 @@ export class McpProxy {
     this.auditLogger = options.auditLogger;
     this.upstreamConfigs = options.upstreamServers;
     this.upstreamManager = new UpstreamManager(options.vault);
+    this.listenAddress = options.listenAddress || '127.0.0.1';
   }
 
   /**
@@ -88,7 +100,7 @@ export class McpProxy {
     this.server = http.createServer(async (req, res) => {
       // CORS headers for MCP clients
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
       if (req.method === 'OPTIONS') {
@@ -97,6 +109,15 @@ export class McpProxy {
         return;
       }
 
+      const url = req.url || '/';
+
+      // Route /acp/* endpoints
+      if (url.startsWith('/acp/')) {
+        await this.handleAcpRoute(req, res, url);
+        return;
+      }
+
+      // Default: MCP JSON-RPC handler
       if (req.method !== 'POST') {
         res.writeHead(405, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Method not allowed' }));
@@ -134,9 +155,9 @@ export class McpProxy {
         }
       });
 
-      this.server!.listen(this.port, '127.0.0.1', () => {
+      this.server!.listen(this.port, this.listenAddress, () => {
         this.ready = true;
-        console.log(`  🔌 ACP proxy listening on http://127.0.0.1:${this.port}`);
+        console.log(`  ACP proxy listening on http://${this.listenAddress}:${this.port}`);
         resolve();
       });
     });
@@ -156,6 +177,104 @@ export class McpProxy {
         resolve();
       }
     });
+  }
+
+  /**
+   * Handle /acp/* routes.
+   */
+  private async handleAcpRoute(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
+    if (url === '/acp/health' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '0.3.0' }));
+      return;
+    }
+
+    if (url === '/acp/intercept' && req.method === 'POST') {
+      await this.handleIntercept(req, res);
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  }
+
+  /**
+   * Handle POST /acp/intercept — general-purpose interception endpoint.
+   *
+   * Accepts InterceptionRequest JSON, routes through consent gate,
+   * returns InterceptionResponse.
+   */
+  private async handleIntercept(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await readBody(req);
+      const request = JSON.parse(body) as InterceptionRequest;
+
+      // Validate required fields
+      if (!request.kind || !request.tool) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ allowed: false, reason: 'Missing required fields: kind, tool' }));
+        return;
+      }
+
+      const requestId = request.requestId || generateRequestId();
+
+      // Log the interception
+      this.auditLogger.record({
+        event_type: 'tool_call_intercepted',
+        agent: 'sandbox-agent',
+        tool: request.tool,
+        category: 'unknown',
+        risk_level: 'medium',
+        metadata: {
+          kind: request.kind,
+          arguments: request.arguments,
+        },
+      });
+
+      // Route through consent gate
+      const result = await this.consentGate.process({
+        tool: request.tool,
+        arguments: request.arguments || {},
+        requestId,
+        kind: request.kind,
+      });
+
+      const response: InterceptionResponse = {
+        allowed: result.allowed,
+        reason: result.reason,
+      };
+
+      if (result.consent_proof) {
+        response.consentProof = {
+          consent_id: result.consent_proof.consent_id,
+          signature: result.consent_proof.signature,
+          timestamp: result.consent_proof.timestamp,
+        };
+      }
+
+      // Log the decision
+      this.auditLogger.record({
+        event_type: result.allowed ? 'tool_call_forwarded' : 'tool_call_denied',
+        agent: 'sandbox-agent',
+        tool: request.tool,
+        category: result.category || 'unknown',
+        risk_level: result.riskLevel || 'medium',
+        decision: result.allowed ? 'approved' : 'denied',
+        metadata: {
+          kind: request.kind,
+          reason: result.reason,
+        },
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        allowed: false,
+        reason: `Invalid request: ${(err as Error).message}`,
+      }));
+    }
   }
 
   /**
@@ -205,7 +324,7 @@ export class McpProxy {
         },
         serverInfo: {
           name: 'acp-proxy',
-          version: '0.2.4',
+          version: '0.3.0',
         },
       },
     };
@@ -270,6 +389,7 @@ export class McpProxy {
         tool: toolName,
         arguments: args,
         requestId: request.id,
+        kind: 'mcp',
       });
 
       if (result.allowed) {

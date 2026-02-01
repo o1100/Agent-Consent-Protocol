@@ -19,11 +19,11 @@ npm run build
 - Signal (via signal-cli)
 - Web dashboard (real-time approval UI)
 
-### 🐧 Sandbox Improvements
-- LD_PRELOAD-based socket interception (rootless Linux)
-- macOS pf firewall integration
-- eBPF-based network filtering
-- seccomp profiles for additional hardening
+### 🐧 Sandbox / Containment Improvements
+- Docker containment hardening (seccomp profiles, read-only filesystem, dropped capabilities)
+- macOS pf firewall integration (for non-Docker fallback)
+- Custom Docker images for common agent runtimes
+- Resource limits and cgroup tuning for contained agents
 
 ### 🧪 Security Review
 - Audit the network isolation model
@@ -44,6 +44,8 @@ npm run build
 cli/src/
 ├── commands/       # CLI commands (init, run, secret, policy, status)
 ├── proxy/          # MCP proxy and consent gate
+├── interceptors/   # HTTP, shell, and Docker interception
+├── integrations/   # Framework-specific integrations
 ├── sandbox/        # Network isolation and process spawning
 ├── channels/       # Approval channels (terminal, telegram, webhook)
 ├── policy/         # YAML policy engine

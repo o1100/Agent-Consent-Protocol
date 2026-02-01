@@ -1,0 +1,80 @@
+# ACP Policy Preset — OpenClaw
+# Sensible defaults for running OpenClaw agents under ACP.
+
+version: "2"
+default_action: ask
+
+rules:
+  # ── MCP Tool Rules ─────────────────────────────
+  # Read operations are always safe
+  - match: { category: read }
+    action: allow
+
+  # Web search is safe
+  - match: { tool: web_search }
+    action: allow
+
+  # ── Shell Rules ────────────────────────────────
+  # Git read operations are safe
+  - match: { kind: shell, tool: "shell:git", command: "git status*" }
+    action: allow
+  - match: { kind: shell, tool: "shell:git", command: "git log*" }
+    action: allow
+  - match: { kind: shell, tool: "shell:git", command: "git diff*" }
+    action: allow
+  - match: { kind: shell, tool: "shell:git", command: "git branch*" }
+    action: allow
+
+  # Git push/force push needs approval
+  - match: { kind: shell, tool: "shell:git", command: "git push*" }
+    action: ask
+    level: high
+
+  # All other shell commands need approval
+  - match: { kind: shell, tool: "shell:*" }
+    action: ask
+    level: high
+
+  # ── HTTP Rules ─────────────────────────────────
+  # Common safe API domains
+  - match: { kind: http, host: "*.googleapis.com" }
+    action: allow
+  - match: { kind: http, host: "*.openai.com" }
+    action: allow
+  - match: { kind: http, host: "*.anthropic.com" }
+    action: allow
+  - match: { kind: http, host: "api.github.com" }
+    action: allow
+
+  # Payment/sensitive domains need critical approval
+  - match: { kind: http, host: "*.stripe.com" }
+    action: ask
+    level: critical
+  - match: { kind: http, host: "*.paypal.com" }
+    action: ask
+    level: critical
+
+  # All other HTTP
+  - match: { kind: http }
+    action: ask
+
+  # ── File Rules ─────────────────────────────────
+  # Workspace file writes are OK
+  - match: { kind: file, tool: "file:write", path: "~/workspace/**" }
+    action: allow
+
+  # Deleting files needs approval
+  - match: { kind: file, tool: "file:rm" }
+    action: ask
+    level: high
+
+  # ── Financial ──────────────────────────────────
+  - match: { category: financial }
+    action: ask
+    level: critical
+    timeout: 300
+
+  # ── Safety net ─────────────────────────────────
+  - match: { tool: "*" }
+    action: ask
+    rate_limit: 30/minute

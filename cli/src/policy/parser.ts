@@ -2,6 +2,7 @@
  * YAML Policy Parser
  *
  * Parses and validates ACP policy files.
+ * Supports v1 (MCP-only) and v2 (shell/http/file/hook) policy formats.
  */
 
 import fs from 'node:fs';
@@ -13,7 +14,9 @@ const VALID_LEVELS = ['low', 'medium', 'high', 'critical'];
 const VALID_CATEGORIES = [
   'read', 'write', 'communication', 'financial',
   'system', 'public', 'physical', 'identity', 'unknown',
+  'network', 'filesystem',
 ];
+const VALID_KINDS = ['mcp', 'shell', 'http', 'file', 'hook'];
 
 export class PolicyParser {
   /**
@@ -91,6 +94,21 @@ export class PolicyParser {
       if (rule.match) {
         if (rule.match.category && !VALID_CATEGORIES.includes(rule.match.category)) {
           errors.push(`${prefix}: Invalid category "${rule.match.category}". Must be one of: ${VALID_CATEGORIES.join(', ')}`);
+        }
+
+        if (rule.match.kind && !VALID_KINDS.includes(rule.match.kind)) {
+          errors.push(`${prefix}: Invalid kind "${rule.match.kind}". Must be one of: ${VALID_KINDS.join(', ')}`);
+        }
+
+        // Validate host, path, command are strings if present
+        if (rule.match.host !== undefined && typeof rule.match.host !== 'string') {
+          errors.push(`${prefix}: "host" must be a string glob pattern`);
+        }
+        if (rule.match.path !== undefined && typeof rule.match.path !== 'string') {
+          errors.push(`${prefix}: "path" must be a string glob pattern`);
+        }
+        if (rule.match.command !== undefined && typeof rule.match.command !== 'string') {
+          errors.push(`${prefix}: "command" must be a string glob pattern`);
         }
       }
 

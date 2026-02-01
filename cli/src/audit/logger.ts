@@ -78,7 +78,7 @@ export class AuditLogger {
   record(entry: AuditEntry): AuditEvent {
     const eventWithoutHash = {
       type: 'audit_event' as const,
-      version: '0.2.0',
+      version: '0.3.0',
       id: `ae_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,
       timestamp: new Date().toISOString(),
       ...entry,

@@ -62,7 +62,7 @@
       <div class="terminal-body">
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">npm install</span> <span class="flag">-g</span> <span class="cmd">agent-2fa</span></div>
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp init</span> <span class="flag">--channel=telegram</span></div>
-        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp run</span> <span class="flag">--</span> <span class="cmd">openclaw gateway</span></div>
+        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp run</span> <span class="flag">--contained</span> <span class="flag">--</span> <span class="cmd">openclaw gateway</span></div>
         <div class="terminal-line"><span class="comment"># ✓ Agent wrapped. Approval required for sensitive actions.</span></div>
       </div>
     </div>
@@ -141,13 +141,13 @@
     <div class="steps-grid fade-in">
       <div class="step-card">
         <span class="step-number">1</span>
-        <h4>Wrap Your Agent</h4>
-        <p>ACP creates a sandboxed environment. Your agent runs inside it with no direct access to credentials or network.</p>
+        <h4>Contain Your Agent</h4>
+        <p>ACP runs your agent inside a Docker container with no direct internet access. All traffic is routed through the ACP proxy.</p>
       </div>
       <div class="step-card">
         <span class="step-number">2</span>
         <h4>Get Notified</h4>
-        <p>When the agent tries something sensitive — shell commands, API calls, file writes — you get a Telegram notification with full context.</p>
+        <p>When the agent tries something sensitive — shell commands, HTTP requests, MCP tool calls — all are intercepted at the proxy level. You get a Telegram notification with full context.</p>
       </div>
       <div class="step-card">
         <span class="step-number">3</span>
@@ -216,7 +216,7 @@
             <td><span class="cross">Yes</span></td>
             <td><span class="cross">Yes</span></td>
             <td><span class="na">N/A</span></td>
-            <td><span class="check">No</span></td>
+            <td><span class="check">No (Docker)</span></td>
           </tr>
           <tr>
             <td>Network enforced</td>
@@ -234,6 +234,13 @@
           </tr>
           <tr>
             <td>Credential isolation</td>
+            <td><span class="cross">✕</span></td>
+            <td><span class="cross">✕</span></td>
+            <td><span class="cross">✕</span></td>
+            <td><span class="check">✓</span></td>
+          </tr>
+          <tr>
+            <td>Docker containment</td>
             <td><span class="cross">✕</span></td>
             <td><span class="cross">✕</span></td>
             <td><span class="cross">✕</span></td>
@@ -279,11 +286,12 @@
       </div>
       <div class="level-card">
         <span class="level-badge l3">Level 3</span>
-        <h4>Production</h4>
+        <h4>Docker Containment</h4>
         <p class="level-time">10 minutes</p>
-        <p>Full network isolation. Credential vault. Audit trail. Policy engine. Enterprise-ready.</p>
+        <p>Full Docker containment. Agent runs in an isolated container with no direct internet. Credential vault. Audit trail. Policy engine.</p>
         <ul class="level-features">
-          <li>Network isolation</li>
+          <li>Docker containment</li>
+          <li>Read-only filesystem</li>
           <li>Credential vault</li>
           <li>Custom policies &amp; audit trail</li>
         </ul>
@@ -366,7 +374,9 @@
                 Copy
               </button>
             </div>
-            <div class="code-body"><pre id="setup-code-4"><span class="syn-prompt">$</span> acp run <span class="syn-flag">--</span> python my_agent.py</pre></div>
+            <div class="code-body"><pre id="setup-code-4"><span class="syn-prompt">$</span> acp run <span class="syn-flag">--</span> python my_agent.py
+<span class="syn-comment"># Or with Docker containment:</span>
+<span class="syn-prompt">$</span> acp run <span class="syn-flag">--contained</span> <span class="syn-flag">--</span> python my_agent.py</pre></div>
           </div>
         </div>
       </div>
@@ -419,10 +429,10 @@ Test it by trying to run a shell command. I should receive an approval request o
         </div>
 
         <div class="prompt-content" data-group="prompt" id="prompt-advanced" style="display:none;">
-          <div class="prompt-body" id="prompt-advanced-text">Install ACP and configure it with network isolation:
+          <div class="prompt-body" id="prompt-advanced-text">Install ACP and configure it with Docker containment:
 
 1. npm install -g agent-2fa
-2. acp init --channel=telegram --network-isolation
+2. acp init --channel=telegram --contained
 3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
 4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>
 5. Store sensitive credentials:
@@ -430,10 +440,10 @@ Test it by trying to run a shell command. I should receive an approval request o
    acp secret set OPENAI_API_KEY=<span class="placeholder">[YOUR KEY]</span>
 6. Apply strict policy: acp policy apply strict
 7. Wrap your process:
-   acp run --network-isolation -- <span class="placeholder">[your command]</span>
+   acp run --contained -- <span class="placeholder">[your command]</span>
 8. Verify by calling any tool — I must approve it on Telegram first.
 
-After this, you operate under full network isolation. All credentials are in the ACP vault — you cannot access them directly. Every sensitive action requires my approval. This is non-negotiable and cannot be bypassed.</div>
+After this, you operate under full Docker containment. All credentials are in the ACP vault — you cannot access them directly. Every sensitive action requires my approval. This is non-negotiable and cannot be bypassed.</div>
         </div>
       </div>
     </div>
@@ -465,9 +475,12 @@ After this, you operate under full network isolation. All credentials are in the
   - <span class="syn-key">match</span>: { <span class="syn-key">category</span>: <span class="syn-value">read</span> }
     <span class="syn-key">action</span>: <span class="syn-string">allow</span>
 
-  - <span class="syn-key">match</span>: { <span class="syn-key">tool</span>: <span class="syn-value">exec</span> }
+  - <span class="syn-key">match</span>: { <span class="syn-key">tool</span>: <span class="syn-value">exec</span>, <span class="syn-key">kind</span>: <span class="syn-value">shell</span> }
     <span class="syn-key">action</span>: <span class="syn-value">ask</span>
     <span class="syn-key">level</span>: <span class="syn-value">high</span>
+
+  - <span class="syn-key">match</span>: { <span class="syn-key">kind</span>: <span class="syn-value">http</span> }
+    <span class="syn-key">action</span>: <span class="syn-value">ask</span>
 
   - <span class="syn-key">match</span>: { <span class="syn-key">category</span>: <span class="syn-value">financial</span> }
     <span class="syn-key">action</span>: <span class="syn-string">deny</span></pre>

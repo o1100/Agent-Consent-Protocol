@@ -8,7 +8,12 @@
  * If no rule matches, default_action applies.
  *
  * Rate limiting is enforced via sliding window counters per tool name.
+ *
+ * Supports interception kinds: mcp, shell, http, file, hook.
+ * Tool names are namespaced: shell:curl, http:GET, file:rm, claude:Bash, etc.
  */
+
+import type { InterceptionKind } from '../interceptors/types.js';
 
 export interface PolicyRule {
   match?: {
@@ -16,6 +21,10 @@ export interface PolicyRule {
     category?: string;
     server?: string;
     args?: Record<string, string>;
+    kind?: InterceptionKind;
+    host?: string;
+    path?: string;
+    command?: string;
   };
   action: 'allow' | 'ask' | 'deny';
   level?: string;
@@ -71,7 +80,7 @@ const PATTERN_CLASSIFICATIONS: Array<[RegExp, Classification]> = [
   [/^(unlock|open|close|toggle|activate)_/, { category: 'physical', riskLevel: 'high' }],
 ];
 
-// Exact match classifications for well-known tools
+// Exact match classifications for well-known MCP tools
 const EXACT_CLASSIFICATIONS: Record<string, Classification> = {
   web_search:           { category: 'read', riskLevel: 'low' },
   read_file:            { category: 'read', riskLevel: 'low' },
@@ -84,6 +93,59 @@ const EXACT_CLASSIFICATIONS: Record<string, Classification> = {
   transfer_money:       { category: 'financial', riskLevel: 'critical' },
   git_push:             { category: 'system', riskLevel: 'high' },
   git_commit:           { category: 'write', riskLevel: 'medium' },
+};
+
+// Shell command classifications (shell:command → classification)
+const SHELL_CLASSIFICATIONS: Record<string, Classification> = {
+  // Network
+  'shell:curl':     { category: 'network', riskLevel: 'medium' },
+  'shell:wget':     { category: 'network', riskLevel: 'medium' },
+  'shell:ssh':      { category: 'network', riskLevel: 'high' },
+  'shell:scp':      { category: 'network', riskLevel: 'high' },
+  'shell:nc':       { category: 'network', riskLevel: 'high' },
+  // Execution
+  'shell:python':   { category: 'system', riskLevel: 'high' },
+  'shell:python3':  { category: 'system', riskLevel: 'high' },
+  'shell:node':     { category: 'system', riskLevel: 'high' },
+  'shell:bash':     { category: 'system', riskLevel: 'high' },
+  'shell:sh':       { category: 'system', riskLevel: 'high' },
+  // Destructive
+  'shell:rm':       { category: 'filesystem', riskLevel: 'high' },
+  'shell:rmdir':    { category: 'filesystem', riskLevel: 'high' },
+  'shell:mv':       { category: 'filesystem', riskLevel: 'medium' },
+  'shell:chmod':    { category: 'filesystem', riskLevel: 'high' },
+  // Package managers
+  'shell:pip':      { category: 'system', riskLevel: 'medium' },
+  'shell:pip3':     { category: 'system', riskLevel: 'medium' },
+  'shell:npm':      { category: 'system', riskLevel: 'medium' },
+  'shell:npx':      { category: 'system', riskLevel: 'high' },
+  'shell:brew':     { category: 'system', riskLevel: 'medium' },
+  // DevOps
+  'shell:git':      { category: 'system', riskLevel: 'medium' },
+  'shell:docker':   { category: 'system', riskLevel: 'critical' },
+  'shell:kubectl':  { category: 'system', riskLevel: 'critical' },
+};
+
+// HTTP classifications
+const HTTP_CLASSIFICATIONS: Record<string, Classification> = {
+  'http:GET':       { category: 'network', riskLevel: 'low' },
+  'http:HEAD':      { category: 'network', riskLevel: 'low' },
+  'http:OPTIONS':   { category: 'network', riskLevel: 'low' },
+  'http:POST':      { category: 'network', riskLevel: 'medium' },
+  'http:PUT':       { category: 'network', riskLevel: 'medium' },
+  'http:PATCH':     { category: 'network', riskLevel: 'medium' },
+  'http:DELETE':    { category: 'network', riskLevel: 'high' },
+  'http:CONNECT':   { category: 'network', riskLevel: 'medium' },
+};
+
+// File operation classifications
+const FILE_CLASSIFICATIONS: Record<string, Classification> = {
+  'file:read':      { category: 'filesystem', riskLevel: 'low' },
+  'file:write':     { category: 'filesystem', riskLevel: 'medium' },
+  'file:rm':        { category: 'filesystem', riskLevel: 'high' },
+  'file:mkdir':     { category: 'filesystem', riskLevel: 'low' },
+  'file:chmod':     { category: 'filesystem', riskLevel: 'high' },
+  'file:rename':    { category: 'filesystem', riskLevel: 'medium' },
 };
 
 const WINDOW_MS: Record<string, number> = {
@@ -104,9 +166,26 @@ export class PolicyEngine {
 
   /**
    * Classify a tool call by name.
+   * Checks namespaced classifications (shell:*, http:*, file:*) first,
+   * then exact MCP matches, then pattern matches.
    */
   classify(tool: string): Classification {
-    // Check exact matches first
+    // Check shell classifications
+    if (tool in SHELL_CLASSIFICATIONS) {
+      return SHELL_CLASSIFICATIONS[tool];
+    }
+
+    // Check HTTP classifications
+    if (tool in HTTP_CLASSIFICATIONS) {
+      return HTTP_CLASSIFICATIONS[tool];
+    }
+
+    // Check file classifications
+    if (tool in FILE_CLASSIFICATIONS) {
+      return FILE_CLASSIFICATIONS[tool];
+    }
+
+    // Check exact MCP matches
     if (tool in EXACT_CLASSIFICATIONS) {
       return EXACT_CLASSIFICATIONS[tool];
     }
@@ -141,12 +220,12 @@ export class PolicyEngine {
    * This does NOT record the call — recording happens separately after
    * we know the call will proceed.
    */
-  private checkRateLimit(tool: string, classification: Classification, args: Record<string, unknown>): string | null {
+  private checkRateLimit(tool: string, classification: Classification, args: Record<string, unknown>, kind?: InterceptionKind): string | null {
     for (const rule of this.policy.rules) {
       if (!rule.rate_limit) continue;
 
       // Check if this rate limit rule matches the tool
-      if (!this.matchesRule(rule, tool, classification, args)) continue;
+      if (!this.matchesRule(rule, tool, classification, args, kind)) continue;
 
       const parsed = this.parseRateLimit(rule.rate_limit);
       if (!parsed) continue;
@@ -185,12 +264,13 @@ export class PolicyEngine {
   /**
    * Evaluate a tool call against the policy.
    * Checks rate limits first, then matches rules.
+   * Optionally accepts interception kind and extra context for extended matching.
    */
-  evaluate(tool: string, args: Record<string, unknown>): PolicyResult {
+  evaluate(tool: string, args: Record<string, unknown>, kind?: InterceptionKind): PolicyResult {
     const classification = this.classify(tool);
 
     // Check rate limits before normal rule evaluation
-    const rateLimitReason = this.checkRateLimit(tool, classification, args);
+    const rateLimitReason = this.checkRateLimit(tool, classification, args, kind);
     if (rateLimitReason) {
       return {
         action: 'deny',
@@ -207,7 +287,7 @@ export class PolicyEngine {
       // Rules can be rate-limit-only (no action) — skip for action matching
       if (!rule.action) continue;
 
-      if (this.matchesRule(rule, tool, classification, args)) {
+      if (this.matchesRule(rule, tool, classification, args, kind)) {
         return {
           action: rule.action,
           ruleId: `rule_${i}`,
@@ -228,15 +308,24 @@ export class PolicyEngine {
 
   /**
    * Check if a tool call matches a policy rule.
+   * Extended to support kind, host, path, and command matching.
    */
   private matchesRule(
     rule: PolicyRule,
     tool: string,
     classification: Classification,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    kind?: InterceptionKind
   ): boolean {
     const match = rule.match;
     if (!match) return true; // No match criteria = matches everything
+
+    // Check interception kind
+    if (match.kind) {
+      if (!kind || kind !== match.kind) {
+        return false;
+      }
+    }
 
     // Check tool name (supports glob patterns)
     if (match.tool) {
@@ -248,6 +337,30 @@ export class PolicyEngine {
     // Check category
     if (match.category) {
       if (classification.category !== match.category) {
+        return false;
+      }
+    }
+
+    // Check host (for HTTP interceptions — matches against args.host)
+    if (match.host) {
+      const host = String(args.host || '');
+      if (!this.globMatch(host, match.host)) {
+        return false;
+      }
+    }
+
+    // Check path (for file interceptions — matches against args.path)
+    if (match.path) {
+      const filePath = String(args.path || '');
+      if (!this.globMatch(filePath, match.path)) {
+        return false;
+      }
+    }
+
+    // Check command (for shell interceptions — matches against args.command)
+    if (match.command) {
+      const cmd = String(args.command || '');
+      if (!this.globMatch(cmd, match.command)) {
         return false;
       }
     }
@@ -273,14 +386,16 @@ export class PolicyEngine {
   }
 
   /**
-   * Simple glob matching: * matches any characters.
+   * Simple glob matching: * matches any characters, ** matches path separators too.
    */
   private globMatch(value: string, pattern: string): boolean {
     if (pattern === '*') return true;
 
     const regexStr = pattern
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
+      .replace(/\*\*/g, '\0DOUBLESTAR\0')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\0DOUBLESTAR\0/g, '.*')
       .replace(/\?/g, '.');
 
     return new RegExp(`^${regexStr}$`).test(value);

@@ -12,16 +12,16 @@ Only the latest published version receives security fixes.
 
 | Version | Supported |
 |---------|-----------|
-| 0.2.x   | ✅ Current |
-| < 0.2   | ❌         |
+| 0.3.x   | ✅ Current |
+| 0.2.x   | ❌         |
 
 ## Known Limitations
 
 These are architectural gaps we're actively working on. They are **not bugs** — they are features that don't exist yet:
 
-1. **Network isolation requires root** — Without `sudo`, the `--network-isolation` flag falls back to proxy-only mode. The agent can make direct network requests bypassing ACP.
+1. **Network isolation now available via `--contained`** — The `--contained` flag launches the agent inside a Docker container with `--internal` networking, providing full network isolation without requiring root. Without `--contained`, the agent can still make direct network requests bypassing ACP.
 
-2. **MCP-only interception** — ACP only intercepts MCP tool calls. Agents using direct HTTP, shell commands via `child_process`, or other non-MCP interfaces are not covered.
+2. **MCP-only interception (without contained mode)** — In default mode, ACP only intercepts MCP tool calls. In contained mode (`--contained`), ACP also covers shell commands, HTTP requests, and Docker access via interceptors, since the agent runs inside an isolated Docker container with no outbound network access.
 
 3. **Private key stored unencrypted** — The Ed25519 signing key at `~/.acp/keys/private.key` is stored as plaintext hex. An agent running as the same OS user could read it.
 
@@ -29,7 +29,7 @@ These are architectural gaps we're actively working on. They are **not bugs** �
 
 5. **Consent binds to tool name only** — The consent proof signs the arguments hash, but the human approval UI shows arguments at approval time. There's no enforcement that the arguments haven't changed between display and execution (they can't in the current flow, but the proof doesn't bind to a specific request ID the human saw).
 
-6. **Same-user process model** — The agent runs as the same OS user as ACP. Without network namespaces or containers, the agent could theoretically read ACP's config, keys, and vault.
+6. **Same-user process model** — In default mode, the agent runs as the same OS user as ACP and could theoretically read ACP's config, keys, and vault. In contained mode (`--contained`), this is mitigated: the agent runs inside a Docker container where `~/.acp/` is not mounted, so the agent has no access to ACP's private key, config, or vault.
 
 See [THREAT-MODEL.md](THREAT-MODEL.md) for the full analysis.
 

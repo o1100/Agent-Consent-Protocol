@@ -1,6 +1,6 @@
-# Agent Consent Protocol (ACP) — Specification v0.2
+# Agent Consent Protocol (ACP) — Specification v0.3
 
-**Version:** 0.2.0 (Draft)
+**Version:** 0.3.0 (Draft)
 **Status:** Draft RFC
 **License:** Apache 2.0
 
@@ -78,6 +78,16 @@ In full isolation mode:
 4. All other outbound traffic is dropped
 5. DNS is not available inside the sandbox
 
+### 2.2.1 Containment Mode (`--contained`)
+
+When run with `--contained`, ACP launches the agent inside a Docker container with an `--internal` network. This provides:
+
+1. **Full network isolation** — The Docker `--internal` network has no outbound gateway. The agent cannot make any external HTTP requests, DNS lookups, or other network calls.
+2. **Key/config isolation** — The `~/.acp/` directory is not mounted in the container. The agent cannot read ACP's private key, config, or vault.
+3. **Shell/HTTP/Docker coverage** — Even if the agent uses `child_process.exec()`, direct HTTP calls, or other non-MCP methods, all outbound traffic is blocked at the Docker network level.
+
+This is the recommended mode for untrusted agents, as it closes the enforcement gaps present in the default proxy-only mode.
+
 ### 2.3 Credential Vault
 
 ```
@@ -142,7 +152,7 @@ Credentials are:
 ```json
 {
   "type": "consent_request",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "id": "cr_<unique_id>",
   "timestamp": "ISO-8601",
   "expires_at": "ISO-8601",
@@ -173,7 +183,7 @@ Credentials are:
 ```json
 {
   "type": "consent_response",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "request_id": "cr_<id>",
   "timestamp": "ISO-8601",
   "decision": "approved | denied | approved_with_modifications",
@@ -263,7 +273,7 @@ ACP auto-classifies common tool names:
 ### 6.1 Key Generation
 
 ACP generates an Ed25519 key pair during `acp init`:
-- Private key stored in `~/.acp/keys/private.key` (encrypted)
+- Private key stored in `~/.acp/keys/private.key` (plaintext hex — not encrypted at rest; relies on file permissions and contained mode for protection)
 - Public key stored in `~/.acp/keys/public.key`
 
 ### 6.2 Signing Payload
@@ -323,7 +333,7 @@ Tampering with any event breaks the chain from that point forward.
 ```json
 {
   "type": "audit_event",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "id": "ae_<unique>",
   "timestamp": "ISO-8601",
   "event_type": "string",

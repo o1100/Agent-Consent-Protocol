@@ -118,6 +118,32 @@ ACP injects these into the agent process:
 | `ACP_PROXY_URL` | `http://127.0.0.1:8443` | MCP proxy address |
 | `MCP_SERVER_URL` | `http://127.0.0.1:8443` | Alias for MCP SDK compat |
 | `ACP_SANDBOX` | `1` | Indicates running inside ACP |
-| `ACP_VERSION` | `0.1.0` | ACP version |
+| `ACP_VERSION` | `0.3.0` | ACP version |
+| `ACP_CONTAINED` | `1` | Set when running in Docker contained mode (`--contained`) |
+| `ACP_HTTP_INTERCEPT` | `1` | Set when HTTP interception is active |
+| `ACP_SHELL_INTERCEPT` | `1` | Set when shell command interception is active |
 
 ACP also **strips** any environment variables that match vault secret keys, ensuring the agent never has direct access to credentials.
+
+## Using `--contained` Mode with Integrations
+
+For maximum security, run your agent with `--contained` to launch it inside a Docker container with full network isolation:
+
+```bash
+# Run any agent in contained mode
+acp run --contained -- python my_agent.py
+
+# OpenClaw in contained mode
+acp run --contained -- openclaw gateway
+
+# LangChain in contained mode
+acp run --contained -- python langchain_agent.py
+```
+
+In contained mode:
+- The agent runs inside a Docker container with an `--internal` network (no outbound internet access)
+- All traffic must go through the ACP proxy — shell commands, HTTP requests, and other non-MCP actions are blocked at the network level
+- `~/.acp/` is not mounted in the container, so the agent cannot read ACP's keys, config, or vault
+- The `ACP_CONTAINED=1` environment variable is set so your agent can detect it is running in contained mode
+
+Your agent code requires no changes — `ACP_PROXY_URL` is injected as usual. The only difference is the stronger isolation boundary provided by Docker.

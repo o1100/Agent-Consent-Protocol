@@ -18,6 +18,7 @@ import { PolicyEngine } from '../policy/engine.js';
 import { CredentialVault } from '../sandbox/credentials.js';
 import { AuditLogger } from '../audit/logger.js';
 import { loadPrivateKey, canonicalJSON, sha256, generateNonce } from '../crypto/keys.js';
+import type { InterceptionKind } from '../interceptors/types.js';
 
 // Channel adapter interface — implemented by terminal, telegram, webhook
 export interface ChannelAdapter {
@@ -40,10 +41,11 @@ export interface ConsentDecision {
   modifications?: Record<string, unknown>;
 }
 
-interface ToolCallRequest {
+export interface ToolCallRequest {
   tool: string;
   arguments: Record<string, unknown>;
   requestId: string | number;
+  kind?: InterceptionKind;
 }
 
 export interface ConsentProof {
@@ -159,7 +161,7 @@ export class ConsentGate {
     const classification = this.policyEngine.classify(request.tool);
 
     // 2. Evaluate policy
-    const policyResult = this.policyEngine.evaluate(request.tool, request.arguments);
+    const policyResult = this.policyEngine.evaluate(request.tool, request.arguments, request.kind);
 
     // Log policy evaluation
     this.auditLogger.record({
@@ -172,6 +174,7 @@ export class ConsentGate {
       metadata: {
         rule_id: policyResult.ruleId,
         rule_name: policyResult.ruleName,
+        kind: request.kind || 'mcp',
       },
     });
 

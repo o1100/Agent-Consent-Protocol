@@ -1,7 +1,8 @@
 /**
  * acp init — Interactive setup wizard
  *
- * Creates ~/.acp/ with config, keys, default policy, and vault.
+ * Creates ~/.acp/ with config, keys, default policy, vault,
+ * and directories for hooks and bin.
  */
 
 import fs from 'node:fs';
@@ -16,6 +17,8 @@ const CONFIG_PATH = path.join(ACP_DIR, 'config.yml');
 const KEYS_DIR = path.join(ACP_DIR, 'keys');
 const VAULT_PATH = path.join(ACP_DIR, 'vault.json');
 const POLICY_PATH = path.join(ACP_DIR, 'policy.yml');
+const HOOKS_DIR = path.join(ACP_DIR, 'hooks');
+const BIN_DIR = path.join(ACP_DIR, 'bin');
 
 interface InitOptions {
   channel: string;
@@ -43,6 +46,8 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Create directories
   fs.mkdirSync(ACP_DIR, { recursive: true });
   fs.mkdirSync(KEYS_DIR, { recursive: true });
+  fs.mkdirSync(HOOKS_DIR, { recursive: true });
+  fs.mkdirSync(BIN_DIR, { recursive: true });
 
   // Generate Ed25519 key pair
   console.log('  Generating Ed25519 key pair...');
@@ -55,11 +60,26 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Channel configuration
   const channel = options.channel;
   const config: Record<string, unknown> = {
-    version: '1',
+    version: '2',
     channel,
     proxy: {
       port: 8443,
       upstream_servers: [],
+    },
+    http_proxy: {
+      enabled: true,
+      port: 8444,
+    },
+    shell_intercept: {
+      enabled: true,
+      fail_mode: 'deny',
+      commands: [
+        'curl', 'wget', 'ssh', 'scp', 'nc',
+        'python', 'python3', 'node',
+        'rm', 'rmdir', 'mv', 'chmod',
+        'pip', 'pip3', 'npm', 'npx', 'brew',
+        'git', 'docker', 'kubectl',
+      ],
     },
     defaults: {
       timeout_seconds: 120,
@@ -125,5 +145,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log('');
   console.log('    acp secret set OPENAI_API_KEY=sk-...');
   console.log('    acp run -- python my_agent.py');
+  console.log('');
+  console.log('  New in v0.3:');
+  console.log('    acp setup claude-code     # Hook into Claude Code');
+  console.log('    acp setup openclaw        # OpenClaw integration help');
   console.log('');
 }

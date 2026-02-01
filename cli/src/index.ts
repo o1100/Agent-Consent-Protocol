@@ -4,10 +4,13 @@
  * ACP CLI — Agent Consent Protocol
  *
  * One command to wrap any agent in a consent-enforced sandbox.
+ * Intercepts MCP tool calls, shell commands, HTTP requests, and file operations.
+ * Docker containment mode (--contained) provides kernel-enforced isolation.
  *
  * Usage:
  *   acp init [--channel=prompt|telegram|webhook]
- *   acp run [--network-isolation] -- <command>
+ *   acp run [--contained] [--image <image>] [--workspace <dir>] -- <command>
+ *   acp setup claude-code|openclaw
  *   acp secret set KEY=VALUE
  *   acp secret list
  *   acp secret remove KEY
@@ -19,6 +22,7 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { runCommand } from './commands/run.js';
+import { setupCommand } from './commands/setup.js';
 import { secretCommand } from './commands/secret.js';
 import { policyCommand } from './commands/policy.js';
 import { statusCommand } from './commands/status.js';
@@ -28,7 +32,7 @@ const program = new Command();
 program
   .name('acp')
   .description('Agent Consent Protocol — 2FA for AI Agents')
-  .version('0.2.4');
+  .version('0.3.0');
 
 // acp init
 program
@@ -41,14 +45,29 @@ program
 program
   .command('run')
   .description('Run an agent inside the ACP sandbox')
-  .option('--network-isolation', 'Enable network isolation (Linux, requires root)', false)
+  .option('--contained', 'Enable Docker containment (kernel-enforced isolation)', false)
+  .option('--interactive', 'Pass stdin to container (for interactive agents like Claude Code)', false)
+  .option('--image <image>', 'Docker image to use (default: auto-detect from command)')
+  .option('--workspace <dir>', 'Workspace directory to mount in container (default: CWD)')
+  .option('--env <KEY>', 'Forward host env var to container (repeatable)', (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
+  .option('--network-isolation', 'Deprecated: use --contained instead', false)
   .option('--policy <file>', 'Policy file to use')
   .option('--port <port>', 'ACP proxy port', '8443')
+  .option('--http-proxy-port <port>', 'HTTP forward proxy port', '8444')
   .option('--upstream <command>', 'Upstream MCP server command (repeatable)', (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
   .option('--channel <type>', 'Override approval channel: prompt, telegram, webhook')
+  .option('--no-shell-intercept', 'Disable shell command interception')
+  .option('--no-http-intercept', 'Disable HTTP request interception')
   .allowUnknownOption(true)
   .argument('[command...]', 'Agent command to run')
   .action(runCommand);
+
+// acp setup
+program
+  .command('setup <integration>')
+  .description('Set up integration (claude-code, openclaw)')
+  .option('--port <port>', 'ACP proxy port', '8443')
+  .action(setupCommand);
 
 // acp secret
 const secret = program
