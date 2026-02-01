@@ -51,12 +51,27 @@ export function generateWrappers(config: WrapperConfig): string {
   const binDir = path.join(wrapperDir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
 
+  // Resolve the real node binary path once, so wrappers don't recurse
+  // through the wrapper bin dir when invoking node.
+  let realNodePath = 'node'; // fallback
+  try {
+    const nodePaths = execSync('which -a node 2>/dev/null || true', { encoding: 'utf-8' })
+      .trim()
+      .split('\n')
+      .filter(p => p && !p.startsWith(binDir));
+    if (nodePaths.length > 0) {
+      realNodePath = nodePaths[0];
+    }
+  } catch {
+    // keep fallback
+  }
+
   // Generate acp-gate.mjs helper
-  generateGateHelper(binDir, config.acpPort, failMode);
+  generateGateHelper(binDir, config.acpPort, failMode, realNodePath);
 
   // Generate wrapper for each command
   for (const cmd of commands) {
-    generateWrapper(binDir, cmd, config.acpPort, failMode);
+    generateWrapper(binDir, cmd, config.acpPort, failMode, realNodePath);
   }
 
   return binDir;
@@ -66,8 +81,8 @@ export function generateWrappers(config: WrapperConfig): string {
  * Generate the acp-gate.mjs Node.js helper script.
  * This is called by shell wrappers to POST to /acp/intercept.
  */
-function generateGateHelper(binDir: string, acpPort: number, failMode: string): void {
-  const script = `#!/usr/bin/env node
+function generateGateHelper(binDir: string, acpPort: number, failMode: string, realNodePath: string): void {
+  const script = `#!${realNodePath}
 // ACP Gate Helper — POSTs to /acp/intercept and returns the decision.
 // Usage: node acp-gate.mjs <tool> <json-args>
 // Exit codes: 0 = allowed, 1 = denied, 2 = error
@@ -154,7 +169,7 @@ req.end();
  * 3. If allowed: execs the original binary with original args
  * 4. If denied: exits with code 126
  */
-function generateWrapper(binDir: string, cmd: string, acpPort: number, failMode: string): void {
+function generateWrapper(binDir: string, cmd: string, acpPort: number, failMode: string, realNodePath: string): void {
   // Find the real binary path (outside our wrapper dir)
   let realPath: string;
   try {
@@ -179,6 +194,12 @@ function generateWrapper(binDir: string, cmd: string, acpPort: number, failMode:
 # Real binary: ${realPath}
 set -euo pipefail
 
+# Recursion guard: if we're already inside a wrapper, exec the real binary directly
+if [ -n "\${ACP_WRAPPER_ACTIVE:-}" ]; then
+  exec "${realPath}" "$@"
+fi
+export ACP_WRAPPER_ACTIVE=1
+
 ACP_GATE_DIR="$(dirname "$0")"
 REAL_CMD="${realPath}"
 
@@ -186,13 +207,14 @@ REAL_CMD="${realPath}"
 FULL_CMD="${cmd} $*"
 
 # Ask ACP for permission
-ARGS_JSON=$(printf '%s' "$FULL_CMD" | node -e "
+ARGS_JSON=$(printf '%s' "$FULL_CMD" | ${realNodePath} -e "
   let d='';
   process.stdin.on('data',c=>d+=c);
   process.stdin.on('end',()=>console.log(JSON.stringify({command:d,args:process.argv.slice(1)})))
 " -- "$@" 2>/dev/null || echo '{"command":"${cmd}"}')
 
-if node "$ACP_GATE_DIR/acp-gate.mjs" "shell:${cmd}" "$ARGS_JSON"; then
+if ${realNodePath} "$ACP_GATE_DIR/acp-gate.mjs" "shell:${cmd}" "$ARGS_JSON"; then
+  unset ACP_WRAPPER_ACTIVE
   exec "$REAL_CMD" "$@"
 else
   exit 126

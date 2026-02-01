@@ -20,7 +20,7 @@ describe('Shell wrapper generation', () => {
     assert.ok(fs.existsSync(gatePath), 'acp-gate.mjs should exist');
 
     const content = fs.readFileSync(gatePath, 'utf-8');
-    assert.ok(content.includes('#!/usr/bin/env node'), 'should have node shebang');
+    assert.ok(content.startsWith('#!') && content.includes('node'), 'should have node shebang with absolute path');
     assert.ok(content.includes('/acp/intercept'), 'should POST to /acp/intercept');
     assert.ok(content.includes('8443'), 'should contain the port');
   });
