@@ -244,6 +244,9 @@ export function runContained(options: DockerOptions): ChildProcess {
     '-e', 'ACP_SANDBOX=1',
     '-e', 'ACP_CONTAINED=1',
     '-e', 'ACP_VERSION=0.3.0',
+    // Override HOME to /workspace so the agent writes config/state there
+    // instead of trying to create directories under the host's HOME path.
+    '-e', 'HOME=/workspace',
   ];
 
   // Add custom environment variables
