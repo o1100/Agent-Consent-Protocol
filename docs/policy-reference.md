@@ -1,235 +1,156 @@
 # Policy Reference
 
-ACP policies are YAML files that control which tool calls are allowed, which need human approval, and which are blocked.
+ACP policies are YAML files that control which agent actions are allowed, which need human approval, and which are blocked.
 
 ## File Location
 
 Active policy: `~/.acp/policy.yml`
 
-Apply a policy:
-```bash
-acp policy apply policies/strict.yml
-```
-
-View current policy:
-```bash
-acp policy show
-```
-
-## Schema
+## Format
 
 ```yaml
-version: "1"                    # Policy format version
-default_action: ask             # What to do when no rule matches
+default: ask              # What to do when no rule matches: allow, ask, deny
+
+wrap:                     # Commands to intercept at Layer 1 (shell wrappers)
+  - gh
+  - git
+  - curl
+  - rm
 
 rules:
-  - match:                      # Criteria for matching tool calls
-      tool: "send_*"           # Tool name (glob patterns supported)
-      category: communication   # Action category
-      server: github            # MCP server name
-      args:                     # Argument matching
-        path: "~/safe/**"      # Glob patterns in values
-    action: allow               # What to do: allow, ask, deny
-    level: high                 # Risk level for "ask" actions
-    timeout: 300                # Seconds before auto-deny
-    rate_limit: "20/minute"    # Rate limiting
-    conditions:
-      time_of_day:
-        after: "09:00"
-        before: "17:00"
-        timezone: "UTC"
+  - match:                # Criteria for matching actions
+      name: "gh"          # Command name (exact or glob)
+      args: "pr list*"    # Command arguments (glob)
+      kind: http          # Action kind: shell or http
+      host: "*.example.com"  # HTTP host (glob, for kind: http)
+      method: "GET"       # HTTP method (for kind: http)
+    action: allow         # What to do: allow, ask, deny
+    timeout: 120          # Seconds before auto-deny (for ask actions)
 ```
 
 ## Actions
 
 | Action | Behavior |
 |---|---|
-| `allow` | Forward to MCP server immediately. No human involved. |
-| `ask` | Request human approval. Block until response or timeout. |
-| `deny` | Block immediately. Return error to agent. |
+| `allow` | Execute immediately. No human involved. |
+| `ask` | Request human approval via configured channel. Block until response or timeout. |
+| `deny` | Block immediately. Agent gets an error. |
 
 ## Match Criteria
 
-### `tool` — Tool Name
-
-Matches the MCP tool name. Supports glob patterns:
-
+### `name` — Command Name
+Matches the shell command name. Supports glob patterns:
 ```yaml
-# Exact match
-- match: { tool: send_email }
-
-# Prefix match
-- match: { tool: "send_*" }
-
-# Suffix match
-- match: { tool: "*_file" }
-
-# Match everything
-- match: { tool: "*" }
+- match: { name: "cat" }         # Exact match
+- match: { name: "gh" }          # Exact match
 ```
 
-### `category` — Action Category
-
-Built-in categories:
-
-| Category | Examples |
-|---|---|
-| `read` | `read_file`, `web_search`, `get_weather` |
-| `write` | `write_file`, `create_event`, `update_record` |
-| `communication` | `send_email`, `send_sms`, `message_user` |
-| `financial` | `transfer_money`, `charge_card`, `pay_invoice` |
-| `system` | `execute_shell`, `deploy_production`, `delete_database` |
-| `public` | `send_tweet`, `publish_post`, `release_package` |
-| `physical` | `unlock_door`, `toggle_switch` |
-
-ACP auto-classifies tools by name pattern. Override with explicit category in the match.
-
-### `args` — Argument Matching
-
-Match on tool call arguments:
-
+### `args` — Command Arguments
+Matches command arguments. Supports glob patterns:
 ```yaml
-# Only allow writing to safe directories
-- match:
-    tool: write_file
-    args:
-      path: "~/workspace/**"
-  action: allow
-
-# Block emails to specific domains
-- match:
-    tool: send_email
-    args:
-      to: "*@competitor.com"
-  action: deny
+- match: { name: "gh", args: "pr list*" }    # gh pr list ...
+- match: { name: "rm", args: "-rf /*" }       # rm -rf /...
 ```
 
-## Risk Levels
-
-When `action: ask`, the `level` field controls the urgency:
-
-| Level | Icon | Meaning |
-|---|---|---|
-| `low` | 🟢 | Low risk, quick approval |
-| `medium` | 🟡 | Moderate risk |
-| `high` | 🔴 | High risk, review carefully |
-| `critical` | ⛔ | Critical, requires careful review |
-
-## Timeout
-
-For `ask` actions, `timeout` specifies seconds before auto-deny:
-
+### `kind` — Action Kind
+Filters by action type. Prevents shell rules from matching HTTP actions and vice versa:
 ```yaml
-- match: { category: financial }
-  action: ask
-  level: critical
-  timeout: 300  # 5 minutes to decide, then auto-deny
+- match: { kind: http, host: "*.example.com" }   # HTTP only
+- match: { kind: shell }                          # Shell commands only
 ```
 
-Default timeout: 120 seconds (configurable in `~/.acp/config.yml`).
-
-## Rate Limiting
-
-Limit how often a tool can be called:
-
+### `host` — HTTP Host
+Matches the destination host for HTTP/HTTPS requests. Supports glob patterns:
 ```yaml
-- match: { tool: "*" }
-  rate_limit: "20/minute"   # Max 20 calls per minute
-
-- match: { tool: exec }
-  rate_limit: "5/minute"    # Max 5 shell commands per minute
+- match: { kind: http, host: "*.anthropic.com" }   # Any anthropic subdomain
+- match: { kind: http, host: "api.github.com" }    # Exact host
 ```
 
-Supported units: `second`, `minute`, `hour`, `day`.
-
-## Time-of-Day Conditions
-
-Restrict rules to certain hours:
-
+### `method` — HTTP Method
+Matches the HTTP method:
 ```yaml
-# Only auto-approve reads during business hours
-- match: { category: read }
-  action: allow
-  conditions:
-    time_of_day:
-      after: "09:00"
-      before: "17:00"
-      timezone: "UTC"
+- match: { kind: http, host: "api.github.com", method: "GET" }    # GET only
+- match: { kind: http, host: "api.github.com", method: "POST" }   # POST only
 ```
 
-Outside the time window, the rule is skipped and the next rule is evaluated.
+## The `wrap` List
 
-## Rule Evaluation Order
+The `wrap` section lists which executables get shell wrapper scripts inside the container. Only wrapped commands go through Layer 1 (shell interception). Everything else executes directly but still hits Layer 2 (HTTP proxy) if it makes network requests.
+
+```yaml
+wrap:
+  - gh        # GitHub CLI
+  - git       # Git
+  - curl      # cURL
+  - wget      # wget
+  - rm        # Remove files
+  - psql      # PostgreSQL client
+  - python    # Python interpreter
+  - node      # Node.js
+```
+
+## Rule Evaluation
 
 1. Rules are evaluated **top to bottom**
 2. **First matching rule wins**
-3. If no rule matches, `default_action` applies
+3. If no rule matches, `default` applies
+4. More specific rules should go before general ones
 
-This means more specific rules should go before general ones:
-
-```yaml
-rules:
-  # Specific: allow reading workspace files
-  - match: { tool: read_file, args: { path: "~/workspace/**" } }
-    action: allow
-
-  # General: ask for all file reads (catches everything else)
-  - match: { tool: "read_*" }
-    action: ask
-
-  # Catch-all
-  - match: { tool: "*" }
-    action: deny
-```
-
-## Built-in Policies
+## Built-in Policy Templates
 
 | File | Description |
 |---|---|
-| `policies/default.yml` | Ask for dangerous, allow reads |
-| `policies/strict.yml` | Ask for everything except reads |
-| `policies/development.yml` | Allow most, ask for dangerous |
+| `default.yml` | Safe reads allowed, common HTTP hosts allowed, dangerous commands ask |
+| `strict.yml` | Only `cat`/`ls` auto-allowed, everything else asks |
+| `openclaw.yml` | Telegram API + LLM providers auto-allowed, payment domains ask |
 
 ## Examples
 
 ### Minimal Policy
-
 ```yaml
-version: "1"
-default_action: ask
+default: ask
+wrap: []
 rules: []
-# Everything requires approval
+# Everything requires approval. No shell wrappers.
 ```
 
 ### Read-Only Agent
-
 ```yaml
-version: "1"
-default_action: deny
+default: deny
+wrap:
+  - rm
 rules:
-  - match: { category: read }
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "grep" }
+    action: allow
+  - match: { kind: http, host: "*.anthropic.com" }
     action: allow
 ```
 
 ### Production API Agent
-
 ```yaml
-version: "1"
-default_action: deny
-
+default: deny
+wrap:
+  - curl
+  - wget
+  - rm
+  - psql
 rules:
-  - match: { category: read }
+  - match: { name: "cat" }
     action: allow
-
-  - match: { tool: "api_call", args: { method: "GET" } }
+  - match: { name: "ls" }
     action: allow
-
-  - match: { tool: "api_call", args: { method: "POST" } }
+  - match: { kind: http, host: "api.myservice.com", method: "GET" }
+    action: allow
+  - match: { kind: http, host: "api.myservice.com", method: "POST" }
     action: ask
-    level: high
-
-  - match: { tool: "api_call", args: { method: "DELETE" } }
-    action: ask
-    level: critical
     timeout: 60
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "psql" }
+    action: ask
+    timeout: 120
 ```

@@ -1,12 +1,22 @@
 # ACP Policy Preset — Claude Code
 # Sensible defaults for running Claude Code under ACP.
 
-version: "2"
-default_action: ask
+default: ask
+
+wrap:
+  - rm
+  - rmdir
+  - curl
+  - wget
+  - ssh
+  - git
+  - gh
+  - docker
+  - pip
+  - npm
 
 rules:
-  # ── HTTP Rules ─────────────────────────────────
-  # Claude Code API traffic — always allow
+  # Claude Code API traffic
   - match: { kind: http, host: "*.anthropic.com" }
     action: allow
   - match: { kind: http, host: "*.claude.ai" }
@@ -14,34 +24,30 @@ rules:
   - match: { kind: http, host: "*.sentry.io" }
     action: allow
 
-  # ── MCP Tool Rules ─────────────────────────────
-  # Read operations are always safe
-  - match: { category: read }
+  # Safe read commands
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "head" }
+    action: allow
+  - match: { name: "tail" }
+    action: allow
+  - match: { name: "grep" }
+    action: allow
+  - match: { name: "find" }
     action: allow
 
-  # ── Shell Rules ────────────────────────────────
-  # Destructive commands — deny outright
-  - match: { kind: shell, command: "rm -rf /*" }
-    action: deny
-  - match: { kind: shell, command: "rm -rf /" }
-    action: deny
-  - match: { kind: shell, command: "mkfs*" }
-    action: deny
-  - match: { kind: shell, command: "dd if=*of=/dev/*" }
-    action: deny
-  - match: { kind: shell, command: ":(){:|:&};:" }
-    action: deny
+  # Git read operations
+  - match: { name: "git", args: "status*" }
+    action: allow
+  - match: { name: "git", args: "log*" }
+    action: allow
+  - match: { name: "git", args: "diff*" }
+    action: allow
 
-  # All other shell commands need approval
-  - match: { kind: shell }
-    action: ask
-
-  # ── HTTP catch-all ─────────────────────────────
-  # Unknown hosts need approval
-  - match: { kind: http }
-    action: ask
-
-  # ── Safety net ─────────────────────────────────
-  - match: { tool: "*" }
-    action: ask
-    rate_limit: 30/minute
+  # Destructive commands — deny
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny

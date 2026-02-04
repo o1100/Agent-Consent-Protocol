@@ -1,71 +1,85 @@
 # Contributing to ACP
 
-Thanks for your interest in the Agent Consent Protocol! Here's how to get involved.
+Thanks for your interest in the Agent Consent Protocol!
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/o1100/Agent-Consent-Protocol
-cd acp/cli
+cd Agent-Consent-Protocol/cli
 npm install
 npm run build
+npm test    # 47 tests
 ```
 
 ## What We Need
 
-### 🔌 Channel Adapters
+### Channel Adapters
 - Slack (workspace app with interactive messages)
 - Discord (bot with button interactions)
 - Signal (via signal-cli)
 - Web dashboard (real-time approval UI)
 
-### 🐧 Sandbox / Containment Improvements
-- Docker containment hardening (seccomp profiles, read-only filesystem, dropped capabilities)
-- macOS pf firewall integration (for non-Docker fallback)
+### Container Improvements
+- gVisor runtime support for syscall-level interception
+- Firecracker microVM integration for strongest isolation
 - Custom Docker images for common agent runtimes
-- Resource limits and cgroup tuning for contained agents
+- FUSE overlay for workspace file deletion interception
 
-### 🧪 Security Review
-- Audit the network isolation model
-- Review the credential vault encryption
-- Penetration testing of the MCP proxy
-- Fuzzing the policy parser
+### Security Review
+- Container escape analysis
+- HTTP proxy bypass testing
+- Shell wrapper circumvention testing
+- Policy parser fuzzing
 
-### 📖 Documentation
+### Documentation
 - Video tutorials
 - Blog posts and case studies
 - Framework-specific integration guides
 
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 cli/src/
-├── commands/       # CLI commands (init, run, secret, policy, status)
-├── proxy/          # MCP proxy and consent gate
-├── interceptors/   # HTTP, shell, and Docker interception
-├── integrations/   # Framework-specific integrations
-├── sandbox/        # Network isolation and process spawning
-├── channels/       # Approval channels (terminal, telegram, webhook)
-├── policy/         # YAML policy engine
-├── audit/          # Hash-chained audit logger
-└── crypto/         # Ed25519 keys and signing
+  core/              # The protocol (~300 lines)
+    types.ts         # Action, Verdict, PolicyRule
+    gate.ts          # createGate() — the consent gate
+    policy.ts        # YAML policy engine + glob matching
+    channel.ts       # TelegramChannel, WebhookChannel
+    audit.ts         # FileAuditLog — append-only JSONL
+
+  container/         # Container enforcement (~600 lines)
+    docker.ts        # Docker network + container orchestration
+    http-proxy.ts    # HTTP forward proxy (Layer 2)
+    shell-wrappers.ts # Generate wrapper scripts (Layer 1)
+    consent-server.ts # HTTP server for wrapper callbacks
+
+  cli/               # CLI commands
+    index.ts         # Entry point
+    init.ts          # acp init
+    contain.ts       # acp contain -- <command>
+
+  tests/             # 47 tests
+    gate.test.ts
+    policy.test.ts
+    channel.test.ts
+    container.test.ts
+    http-proxy.test.ts
+    shell-wrappers.test.ts
 ```
 
-### Running Tests
+## Running Tests
 
 ```bash
 cd cli
 npm test
 ```
 
-### Code Style
+## Code Style
 
 - TypeScript with strict mode
-- No external dependencies unless absolutely necessary
+- Minimal external dependencies
 - Use Node.js built-in modules where possible
-- Every function gets a JSDoc comment
 
 ## Pull Requests
 

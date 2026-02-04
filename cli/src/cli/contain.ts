@@ -118,7 +118,7 @@ export async function containCommand(
 
   // Banner
   console.log('');
-  console.log('  ACP v1.0 — Agent Consent Protocol');
+  console.log('  ACP v0.3 — Agent Consent Protocol');
   console.log('  ─────────────────────────────────────────');
   console.log(`  Mode:      CONTAINED (Docker)`);
   console.log(`  Network:   acp-jail (${gatewayIp}) — no internet access`);

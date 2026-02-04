@@ -1,49 +1,37 @@
-# ACP Docker Compose — Full network isolation
+# ACP Docker Compose — Agent in isolated container
 #
-# The agent runs in an isolated network with no internet access.
-# All traffic goes through ACP, which has internet access for
-# upstream MCP servers and Telegram.
+# ACP runs on the host. The agent runs in an isolated container.
+# All traffic goes through ACP's consent gate.
 #
 # Usage:
-#   export TELEGRAM_TOKEN=your-bot-token
-#   export CHAT_ID=your-chat-id
-#   docker compose up
+#   # Start ACP on host first:
+#   acp init --channel=telegram
+#
+#   # Then run agent in container:
+#   acp contain -- python my_agent.py
 
-version: "3.8"
+# This compose file is for manual Docker deployments.
+# For most users, `acp contain` handles everything automatically.
 
 services:
-  acp:
-    image: ghcr.io/o1100/acp:latest
+  agent:
+    image: python:3.12-slim  # Replace with your agent's image
     environment:
-      - ACP_CHANNEL=telegram
-      - ACP_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
-      - ACP_TELEGRAM_CHAT_ID=${CHAT_ID}
-    volumes:
-      - ../policies/default.yml:/etc/acp/policy.yml:ro
-      - acp-data:/var/lib/acp
+      - HTTP_PROXY=http://host.docker.internal:8444
+      - HTTPS_PROXY=http://host.docker.internal:8444
+      - ACP_CONSENT_URL=http://host.docker.internal:8443
+      - ACP_SANDBOX=1
+      - ACP_CONTAINED=1
     networks:
       - isolated
-      - internet
-    ports:
-      - "127.0.0.1:8443:8443"
-    restart: unless-stopped
-
-  agent:
-    image: your-agent-image  # Replace with your agent's image
-    environment:
-      - ACP_PROXY_URL=http://acp:8443
-      - MCP_SERVER_URL=http://acp:8443
-    depends_on:
-      - acp
-    networks:
-      - isolated  # NO internet access — only reaches ACP
-    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=100m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
 
 networks:
   isolated:
     internal: true  # No external connectivity
-  internet:
-    # Default: has external connectivity
-
-volumes:
-  acp-data:

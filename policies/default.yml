@@ -1,78 +1,77 @@
 # ACP Default Policy — Sensible defaults for everyday use
-# Ask for dangerous actions, allow reads, rate-limit everything.
+# Ask for dangerous actions, allow reads, deny destructive patterns.
 
-version: "1"
-default_action: ask
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+  - wget
+  - ssh
+  - psql
+  - mysql
+  - rm
+  - rmdir
+  - python
+  - node
+  - pip
+  - npm
 
 rules:
-  # ── HTTP Rules ──────────────────────────────────
-  # (Enforced in both proxy-only and contained mode)
+  # --- ALLOW: safe read operations ---
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "head" }
+    action: allow
+  - match: { name: "tail" }
+    action: allow
+  - match: { name: "grep" }
+    action: allow
+  - match: { name: "find" }
+    action: allow
+  - match: { name: "gh", args: "pr list*" }
+    action: allow
+  - match: { name: "gh", args: "issue list*" }
+    action: allow
+  - match: { name: "git", args: "status*" }
+    action: allow
+  - match: { name: "git", args: "log*" }
+    action: allow
+  - match: { name: "git", args: "diff*" }
+    action: allow
 
-  # LLM providers
+  # --- ALLOW: common safe HTTP destinations ---
   - match: { kind: http, host: "*.anthropic.com" }
     action: allow
   - match: { kind: http, host: "*.openai.com" }
     action: allow
-
-  # Common safe APIs
   - match: { kind: http, host: "*.googleapis.com" }
     action: allow
   - match: { kind: http, host: "api.github.com" }
     action: allow
 
-  # All other HTTP
-  - match: { kind: http }
+  # --- ASK: needs human approval ---
+  - match: { name: "gh", args: "commit*" }
+    action: ask
+    timeout: 120
+  - match: { name: "gh", args: "pr create*" }
+    action: ask
+    timeout: 120
+  - match: { name: "git", args: "push*" }
+    action: ask
+    timeout: 120
+  - match: { name: "curl" }
+    action: ask
+  - match: { name: "rm" }
+    action: ask
+  - match: { name: "psql" }
     action: ask
 
-  # ── Shell Rules ─────────────────────────────────
-  # Container runtime basics
-  - match: { kind: shell, tool: "shell:node" }
-    action: allow
-  - match: { kind: shell, tool: "shell:bash" }
-    action: allow
-  - match: { kind: shell, tool: "shell:sh" }
-    action: allow
-
-  # All other shell commands need approval
-  - match: { kind: shell }
-    action: ask
-    level: high
-
-  # ── MCP Tool Rules ─────────────────────────────
-
-  # Reading is always safe
-  - match: { category: read }
-    action: allow
-
-  # Writing to workspace is fine
-  - match:
-      tool: write_file
-      args:
-        path: "~/workspace/**"
-    action: allow
-
-  # Shell commands always need approval
-  - match: { tool: exec }
-    action: ask
-    level: high
-
-  # Sending messages needs approval
-  - match: { category: communication }
-    action: ask
-    level: high
-
-  # Financial actions: critical security
-  - match: { category: financial }
-    action: ask
-    level: critical
-    timeout: 300  # 5 min timeout, auto-deny
-
-  # Public posts need approval
-  - match: { category: public }
-    action: ask
-    level: high
-
-  # Safety net: rate limit everything
-  - match: { tool: "*" }
-    action: ask
-    rate_limit: 20/minute
+  # --- DENY: never allow ---
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny

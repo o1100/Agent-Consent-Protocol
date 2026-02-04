@@ -62,7 +62,7 @@
       <div class="terminal-body">
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">npm install</span> <span class="flag">-g</span> <span class="cmd">agent-2fa</span></div>
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp init</span> <span class="flag">--channel=telegram</span></div>
-        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp run</span> <span class="flag">--contained</span> <span class="flag">--</span> <span class="cmd">openclaw gateway</span></div>
+        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp contain</span> <span class="flag">--</span> <span class="cmd">openclaw gateway</span></div>
         <div class="terminal-line"><span class="comment"># ✓ Agent wrapped. Approval required for sensitive actions.</span></div>
       </div>
     </div>
@@ -125,7 +125,7 @@
     <div class="fade-in">
       <span class="section-label">How It Works</span>
       <h2 class="section-title">Network-level <span class="gradient-text">agent containment</span></h2>
-      <p class="section-desc">ACP sits between your agent and the real world. Every sensitive action requires your explicit approval. The agent can't bypass it — tool calls are intercepted at the proxy level.</p>
+      <p class="section-desc">ACP runs your agent in a Docker container with no direct internet. Shell commands and HTTP requests are intercepted by two layers. The agent can't bypass it — the container has no way out except through ACP.</p>
     </div>
 
     <div class="flow-diagram fade-in">
@@ -142,12 +142,12 @@
       <div class="step-card">
         <span class="step-number">1</span>
         <h4>Contain Your Agent</h4>
-        <p>ACP runs your agent inside a Docker container with no direct internet access. All traffic is routed through the ACP proxy.</p>
+        <p>ACP runs your agent inside a Docker container with no direct internet access. Two layers intercept shell commands and HTTP requests.</p>
       </div>
       <div class="step-card">
         <span class="step-number">2</span>
         <h4>Get Notified</h4>
-        <p>When the agent tries something sensitive — shell commands, HTTP requests, MCP tool calls — all are intercepted at the proxy level. You get a Telegram notification with full context.</p>
+        <p>When the agent tries something sensitive — shell commands, HTTP requests, API calls — you get a Telegram notification with full context.</p>
       </div>
       <div class="step-card">
         <span class="step-number">3</span>
@@ -346,8 +346,8 @@
       <div class="setup-step">
         <span class="setup-step-num">3</span>
         <div class="setup-step-content">
-          <h4>Store your secrets</h4>
-          <p>Credentials go in the vault — the agent never sees them directly.</p>
+          <h4>Choose a policy</h4>
+          <p>Copy a policy template to control what the agent can do.</p>
           <div class="code-block">
             <div class="code-header">
               <span class="code-lang">bash</span>
@@ -356,7 +356,7 @@
                 Copy
               </button>
             </div>
-            <div class="code-body"><pre id="setup-code-3"><span class="syn-prompt">$</span> acp secret set <span class="syn-string">OPENAI_API_KEY=sk-...</span></pre></div>
+            <div class="code-body"><pre id="setup-code-3"><span class="syn-prompt">$</span> cp templates/default.yml <span class="syn-string">~/.acp/policy.yml</span></pre></div>
           </div>
         </div>
       </div>
@@ -374,9 +374,7 @@
                 Copy
               </button>
             </div>
-            <div class="code-body"><pre id="setup-code-4"><span class="syn-prompt">$</span> acp run <span class="syn-flag">--</span> python my_agent.py
-<span class="syn-comment"># Or with Docker containment:</span>
-<span class="syn-prompt">$</span> acp run <span class="syn-flag">--contained</span> <span class="syn-flag">--</span> python my_agent.py</pre></div>
+            <div class="code-body"><pre id="setup-code-4"><span class="syn-prompt">$</span> acp contain <span class="syn-flag">--</span> python my_agent.py</pre></div>
           </div>
         </div>
       </div>
@@ -412,38 +410,35 @@
         </div>
 
         <div class="prompt-content" data-group="prompt" id="prompt-basic" style="display:block;">
-          <div class="prompt-body" id="prompt-basic-text">I need you to install and configure ACP (Agent Consent Protocol) on this system. ACP adds human approval to your tool calls so I can authorize sensitive actions.
+          <div class="prompt-body" id="prompt-basic-text">I need you to install and configure ACP (Agent Consent Protocol) on this system. ACP adds human approval to your actions so I can authorize sensitive operations.
 
 Steps:
 1. Run: npm install -g agent-2fa
 2. Run: acp init --channel=telegram
 3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
 4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>
-5. Verify it works: acp run -- echo "ACP is working"
+5. Verify it works: acp contain -- echo "ACP is working"
 6. Now configure ACP to wrap your main process. Update your startup command to:
-   acp run -- <span class="placeholder">[your current startup command]</span>
+   acp contain -- <span class="placeholder">[your current startup command]</span>
 
-After this, any sensitive tool calls you make will require my approval via Telegram before executing. Tool calls are intercepted at the proxy level before reaching real tools.
+After this, all shell commands and HTTP requests you make require my approval via Telegram. You'll run inside a Docker container with no direct internet — everything goes through ACP.
 
 Test it by trying to run a shell command. I should receive an approval request on Telegram.</div>
         </div>
 
         <div class="prompt-content" data-group="prompt" id="prompt-advanced" style="display:none;">
-          <div class="prompt-body" id="prompt-advanced-text">Install ACP and configure it with Docker containment:
+          <div class="prompt-body" id="prompt-advanced-text">Install ACP and configure it with the strict policy:
 
 1. npm install -g agent-2fa
-2. acp init --channel=telegram --contained
+2. acp init --channel=telegram
 3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
 4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>
-5. Store sensitive credentials:
-   acp secret set GITHUB_TOKEN=<span class="placeholder">[YOUR TOKEN]</span>
-   acp secret set OPENAI_API_KEY=<span class="placeholder">[YOUR KEY]</span>
-6. Apply strict policy: acp policy apply strict
-7. Wrap your process:
-   acp run --contained -- <span class="placeholder">[your command]</span>
-8. Verify by calling any tool — I must approve it on Telegram first.
+5. Copy the strict policy: cp templates/strict.yml ~/.acp/policy.yml
+6. Wrap your process:
+   acp contain -- <span class="placeholder">[your command]</span>
+7. Verify by running any command — I must approve it on Telegram first.
 
-After this, you operate under full Docker containment. All credentials are in the ACP vault — you cannot access them directly. Every sensitive action requires my approval. This is non-negotiable and cannot be bypassed.</div>
+After this, you run inside a Docker container with no direct internet access. All shell commands and HTTP requests go through ACP's consent gate. Every sensitive action requires my approval. This is non-negotiable and cannot be bypassed.</div>
         </div>
       </div>
     </div>
@@ -469,20 +464,21 @@ After this, you operate under full Docker containment. All credentials are in th
           </button>
         </div>
         <div class="code-body">
-<pre id="policy-code"><span class="syn-key">default_action</span>: <span class="syn-value">ask</span>
+<pre id="policy-code"><span class="syn-key">default</span>: <span class="syn-value">ask</span>
+
+<span class="syn-key">wrap</span>:
+  - <span class="syn-value">gh</span>
+  - <span class="syn-value">curl</span>
+  - <span class="syn-value">rm</span>
 
 <span class="syn-key">rules</span>:
-  - <span class="syn-key">match</span>: { <span class="syn-key">category</span>: <span class="syn-value">read</span> }
+  - <span class="syn-key">match</span>: { <span class="syn-key">name</span>: <span class="syn-string">"cat"</span> }
     <span class="syn-key">action</span>: <span class="syn-string">allow</span>
 
-  - <span class="syn-key">match</span>: { <span class="syn-key">tool</span>: <span class="syn-value">exec</span>, <span class="syn-key">kind</span>: <span class="syn-value">shell</span> }
-    <span class="syn-key">action</span>: <span class="syn-value">ask</span>
-    <span class="syn-key">level</span>: <span class="syn-value">high</span>
+  - <span class="syn-key">match</span>: { <span class="syn-key">kind</span>: <span class="syn-value">http</span>, <span class="syn-key">host</span>: <span class="syn-string">"*.anthropic.com"</span> }
+    <span class="syn-key">action</span>: <span class="syn-string">allow</span>
 
-  - <span class="syn-key">match</span>: { <span class="syn-key">kind</span>: <span class="syn-value">http</span> }
-    <span class="syn-key">action</span>: <span class="syn-value">ask</span>
-
-  - <span class="syn-key">match</span>: { <span class="syn-key">category</span>: <span class="syn-value">financial</span> }
+  - <span class="syn-key">match</span>: { <span class="syn-key">name</span>: <span class="syn-string">"rm"</span>, <span class="syn-key">args</span>: <span class="syn-string">"-rf /*"</span> }
     <span class="syn-key">action</span>: <span class="syn-string">deny</span></pre>
         </div>
       </div>
@@ -504,7 +500,7 @@ After this, you operate under full Docker containment. All credentials are in th
             <span><strong>deny</strong> — Blocked unconditionally. Agent gets an error.</span>
           </li>
         </ul>
-        <p style="margin-top: 16px;">Combine with <code>level: high</code> to require extra confirmation for dangerous operations.</p>
+        <p style="margin-top: 16px;">The <code>wrap</code> list controls which commands get shell wrappers (Layer 1). All HTTP traffic goes through the proxy (Layer 2).</p>
       </div>
     </div>
   </div>

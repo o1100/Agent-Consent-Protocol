@@ -1,39 +1,25 @@
 # ACP Development Policy — Allow most, ask for dangerous
 # Good for local development where you trust the agent more.
 
-version: "1"
-default_action: allow
+default: allow
+
+wrap:
+  - rm
+  - rmdir
+  - curl
+  - wget
 
 rules:
-  # Financial actions still need approval
-  - match: { category: financial }
+  # Destructive file operations still need approval
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny
+  - match: { name: "rm" }
     action: ask
-    level: critical
-    timeout: 300
 
-  # Sending external messages needs approval
-  - match: { category: communication }
+  # Dangerous HTTP destinations
+  - match: { kind: http, host: "*.stripe.com" }
     action: ask
-    level: high
-
-  # Public posts need approval
-  - match: { category: public }
+  - match: { kind: http, host: "*.paypal.com" }
     action: ask
-    level: high
-
-  # Shell commands: allow but rate-limit
-  - match: { tool: exec }
-    action: allow
-    rate_limit: 30/minute
-
-  # Delete operations need approval
-  - match: { tool: "delete_*" }
-    action: ask
-    level: high
-
-  # Deploy operations need approval
-  - match: { tool: "deploy_*" }
-    action: ask
-    level: critical
-
-  # Everything else: allow (default)

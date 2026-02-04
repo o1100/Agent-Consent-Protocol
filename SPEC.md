@@ -1,6 +1,6 @@
-# Agent Consent Protocol (ACP) — Specification v1.0
+# Agent Consent Protocol (ACP) — Specification v0.3.0
 
-**Version:** 1.0.0 (Draft)
+**Version:** 0.3.0 (Draft)
 **Status:** Draft RFC
 **License:** Apache 2.0
 

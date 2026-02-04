@@ -1,35 +1,39 @@
 # ACP Policy Preset — OpenClaw
 #
-# In contained mode (--contained), ACP intercepts all outbound network
-# traffic from the container. Every HTTP/HTTPS connection is gated by
-# domain, regardless of which internal tool initiated it. Local-only
-# operations (file read/write, local exec) stay inside the container
-# and are bounded by Docker isolation (read-only fs, no capabilities).
-#
-# MCP tool rules below apply when tools are routed through ACP's MCP
-# proxy. In contained mode with openclaw, internal tools bypass the
-# MCP proxy but their network traffic is still caught at the HTTP level.
+# For OpenClaw bots running in contained mode.
+# Allows Telegram API (required for bot operation) and LLM providers.
+# All other network traffic and shell commands need approval.
 
-version: "2"
-default_action: ask
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+  - wget
+  - ssh
+  - rm
+  - rmdir
+  - python
+  - python3
+  - node
+  - pip
+  - npm
 
 rules:
-  # ── HTTP Rules ──────────────────────────────────
-  # (Enforced in both proxy-only and contained mode)
-
-  # Telegram (required for Telegram bots)
+  # --- ALLOW: Telegram (required for bot operation) ---
   - match: { kind: http, host: "api.telegram.org" }
     action: allow
   - match: { kind: http, host: "*.telegram.org" }
     action: allow
 
-  # LLM providers
+  # --- ALLOW: LLM providers ---
   - match: { kind: http, host: "*.anthropic.com" }
     action: allow
   - match: { kind: http, host: "*.openai.com" }
     action: allow
 
-  # Common safe APIs
+  # --- ALLOW: common safe APIs ---
   - match: { kind: http, host: "*.googleapis.com" }
     action: allow
   - match: { kind: http, host: "api.github.com" }
@@ -37,60 +41,30 @@ rules:
   - match: { kind: http, host: "api.search.brave.com" }
     action: allow
 
-  # Payment/sensitive domains
+  # --- ALLOW: safe read operations ---
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "git", args: "status*" }
+    action: allow
+  - match: { name: "git", args: "log*" }
+    action: allow
+  - match: { name: "git", args: "diff*" }
+    action: allow
+
+  # --- ASK: payment domains ---
   - match: { kind: http, host: "*.stripe.com" }
     action: ask
-    level: critical
+    timeout: 120
   - match: { kind: http, host: "*.paypal.com" }
     action: ask
-    level: critical
+    timeout: 120
 
-  # All other HTTP — prompt
-  - match: { kind: http }
-    action: ask
+  # --- DENY: destructive patterns ---
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny
 
-  # ── Shell Rules ─────────────────────────────────
-  # (Enforced when shell wrappers are active)
-
-  # Container runtime basics
-  - match: { kind: shell, tool: "shell:node" }
-    action: allow
-  - match: { kind: shell, tool: "shell:bash" }
-    action: allow
-  - match: { kind: shell, tool: "shell:sh" }
-    action: allow
-
-  # Git read-only
-  - match: { kind: shell, tool: "shell:git", command: "git status*" }
-    action: allow
-  - match: { kind: shell, tool: "shell:git", command: "git log*" }
-    action: allow
-  - match: { kind: shell, tool: "shell:git", command: "git diff*" }
-    action: allow
-
-  # All other shell
-  - match: { kind: shell }
-    action: ask
-    level: high
-
-  # ── MCP Tool Rules ─────────────────────────────
-  # (Apply when agent routes tools through ACP's MCP proxy)
-
-  # Read operations
-  - match: { category: read }
-    action: allow
-
-  # Web search
-  - match: { tool: web_search }
-    action: allow
-
-  # Financial
-  - match: { category: financial }
-    action: ask
-    level: critical
-    timeout: 300
-
-  # Safety net
-  - match: { tool: "*" }
-    action: ask
-    rate_limit: 30/minute
+  # Everything else falls through to default: ask

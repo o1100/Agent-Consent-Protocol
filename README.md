@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔐 Agent Consent Protocol (ACP)
+# Agent Consent Protocol (ACP)
 
 ### MCP is how agents use tools. ACP is how humans control agents.
 
@@ -19,7 +19,7 @@
 
 > [!WARNING]
 > **Experimental prototype (v0.3) — not production hardened.**
-> ACP is an early research implementation. It works, it's tested, and the concept is sound — but it has not undergone formal security review and has known limitations. v0.3 adds shell/HTTP/file interception and Docker containment, significantly reducing the bypass surface, but this is still pre-audit software. Read the [Current State](#current-state) section before using it. See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full picture.
+> ACP is a working implementation with 47 tests passing. The concept is sound and the container-based isolation is real, but it has not undergone formal security review. On Linux, isolation is kernel-enforced. On macOS/Windows, isolation is proxy-enforced and weaker. Read the [Platform Differences](#platform-differences) section. See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full picture.
 
 ---
 
@@ -31,111 +31,188 @@ Every framework has its own half-baked human-in-the-loop: LangGraph interrupts, 
 
 - **Framework-specific** — only works in that one ecosystem
 - **Software-level** — runs inside the agent's process, so the agent can bypass it
-- **No proof** — no cryptographic evidence that a human actually approved
-- **No audit trail** — nothing tamper-evident for compliance or debugging
+- **No enforcement** — nothing stops the agent from ignoring it
+- **No audit trail** — no record of what happened
 
 ## The Solution
 
-ACP wraps any agent process in a consent-enforced sandbox. MCP tool calls, shell commands, HTTP requests, and file access all require human approval based on your policy. In contained mode, the agent runs inside Docker with no way out except through ACP.
+ACP runs any agent inside a Docker container with no direct internet access. Two layers of interception catch shell commands and HTTP requests. Every sensitive action requires human approval via your phone. The agent can't bypass it — the container has no way out except through ACP.
 
 ```bash
 npm install -g agent-2fa
 acp init
-acp run -- python my_agent.py
+acp contain -- python my_agent.py
 ```
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  🔐 ACP Consent Request                            │
-│                                                     │
-│  Action:  send_email                                │
-│  Risk:    🔴 HIGH                                   │
-│                                                     │
-│  To:      boss@company.com                          │
-│  Subject: "Quarterly Report"                        │
-│                                                     │
-│  [✅ Approve]  [❌ Deny]                             │
-└─────────────────────────────────────────────────────┘
++------------------------------------------------------+
+|  ACP Consent Request (Telegram)                      |
+|                                                      |
+|  Command:  gh commit -m "deploy to prod"             |
+|  Policy:   ask                                       |
+|                                                      |
+|  [Approve]  [Deny]                                   |
++------------------------------------------------------+
 ```
 
-The agent doesn't know ACP exists. It thinks it's talking to a normal MCP server.
-
----
-
-## Current State
-
-**Be clear about what this is and isn't.** ACP is a working prototype that demonstrates a real concept. Here's exactly where it stands today:
-
-### ✅ What Works Now
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| MCP tool call interception | **Working** | All MCP `tools/call` requests routed through consent gate |
-| Shell command interception | **Working** | Wraps `exec`, `spawn`, `system` — agent shell calls go through policy |
-| HTTP request interception | **Working** | Outbound HTTP/HTTPS from the agent process inspected and gated |
-| File access interception | **Working** | Reads/writes to sensitive paths require approval |
-| Docker containment (`--contained`) | **Working** | Agent runs in an isolated container; all I/O funnelled through ACP |
-| Human approval via Telegram | **Working** | Inline Approve/Deny buttons, real-time |
-| Human approval via terminal | **Working** | Interactive prompt for local dev |
-| YAML policy engine | **Working** | allow/ask/deny rules with glob matching, rate limits |
-| Credential vault | **Working** | AES-256-GCM encrypted, injected only after approval |
-| Ed25519 signed consent proofs | **Working** | Every decision cryptographically signed |
-| Hash-chained audit trail | **Working** | Tamper-evident JSONL log |
-| Works with any agent/language | **Working** | Wraps any process — Python, Node, Go, whatever |
-| 97 tests passing, CI green | **Working** | Automated on Node 20 + 22 |
-
-### ⚠️ What Doesn't Work Yet
-
-| Limitation | Impact | Planned Fix |
-|-----------|--------|-------------|
-| **Contained mode requires Docker** | `--contained` needs Docker installed and running | Support Podman, investigate rootless alternatives |
-| **Non-contained mode can be bypassed** | Without `--contained`, shell/HTTP interception relies on LD_PRELOAD-style hooks that a determined agent could circumvent | Always recommend `--contained` for untrusted agents |
-| **Same OS user (non-contained)** | Without `--contained`, agent runs as same user as ACP — could read config, keys, vault files | Use `--contained` for isolation |
-| **Private key unencrypted** | Ed25519 key stored as plaintext at `~/.acp/keys/` | Encrypt at rest with passphrase |
-| **No replay protection** | Consent proofs have nonces but no server-side nonce store | Nonce persistence + TTL |
-
-### 🔑 The Key Limitation
-
-**Without `--contained`, ACP's shell/HTTP interception is best-effort.** The hooks work against well-behaved agents but a sufficiently adversarial process could bypass them. This is inherent to userspace interception.
-
-**With `--contained`, the bypass gap is closed.** The agent runs inside a Docker container with no network access except back to the ACP proxy. All shell commands, HTTP requests, and file writes are funnelled through ACP's consent gate. There is no path out of the container that doesn't go through policy enforcement.
-
-This means:
-- ✅ **Use `acp run --contained`** for untrusted agents or production workloads — the agent cannot bypass ACP
-- ✅ **Use `acp run`** (without `--contained`) for trusted agents during development — convenient and catches MCP + most shell/HTTP calls
-- ✅ **Use ACP** as an additional safety layer alongside other controls
-- ❌ **Don't rely on non-contained mode alone** if your agent is adversarial or untrusted
+The agent doesn't know ACP exists. It thinks it's running normally.
 
 ---
 
 ## How It Works
 
 ```
-                          ┌──────────────────────────────────────┐
-                          │         Docker Container             │
-                          │        (--contained mode)            │
-                          │                                      │
-Agent  ──→  Shell Hook  ──┤──→  ACP Proxy  ──→  Policy Engine   │
-        ──→  HTTP Hook  ──┤        │                  ↓          │
-        ──→  MCP Calls  ──┤        │        📱 Telegram / Terminal
-                          │        ↓                             │
-                          │   Real MCP Server / Network / Disk   │
-                          └──────────────────────────────────────┘
+HOST MACHINE
++----------------------------------------------------------+
+|  ACP Process                                             |
+|    Consent Gate  <--  Policy (YAML rules)                |
+|         |                                                |
+|         +-- Channel (Telegram / Terminal / Webhook)       |
+|         +-- Audit Log (append-only JSONL)                |
+|                                                          |
+|    :8443  Consent server (shell wrapper callbacks)       |
+|    :8444  HTTP forward proxy                             |
++---------------------------+------------------------------+
+                            | Docker internal network
++---------------------------v------------------------------+
+|  AGENT CONTAINER                                         |
+|  --read-only --cap-drop=ALL --no-new-privileges          |
+|                                                          |
+|  Shell wrappers intercept: gh, git, curl, rm, ...        |
+|  HTTP_PROXY forces all traffic through ACP               |
+|  /workspace (mounted, writable)                          |
++----------------------------------------------------------+
 ```
 
-**Enforcement layers:**
+**Two layers of interception:**
 
-1. **MCP Proxy** — All MCP tool calls intercepted. Policy engine decides: allow, ask, or deny. This is the core of ACP.
-2. **Shell Interception** — Calls to `exec`, `spawn`, `system`, and similar are intercepted and routed through the consent gate.
-3. **HTTP Interception** — Outbound HTTP/HTTPS requests are inspected against policy before being forwarded.
-4. **Docker Containment** *(optional, `--contained`)* — Agent runs in an isolated container with no direct network or filesystem access. All I/O goes through the ACP proxy. This is the strongest enforcement mode.
-5. **Credential Isolation** — API keys stored in ACP's encrypted vault (AES-256-GCM). Injected only after human approval. Agent never sees raw credentials.
+1. **Layer 1: Shell Wrappers** — Wraps commands like `gh`, `curl`, `rm` inside the container. When the agent runs `gh commit`, the wrapper calls ACP for approval before executing. Provides semantic context (knows it's `gh commit` vs `gh pr list`).
 
-**Cryptographic guarantees:**
+2. **Layer 2: HTTP Proxy** — All outbound HTTP/HTTPS traffic is forced through ACP's proxy. Catches anything that bypasses shell wrappers — direct API calls, Python `requests`, raw HTTP clients.
 
-- Every consent decision is signed with Ed25519 keys
-- Hash-chained JSONL audit trail (tamper-evident)
-- Canonical JSON serialization for deterministic signing
+When a command is approved at Layer 1, its resulting network traffic auto-passes Layer 2 (via a short-lived token) to avoid double-prompting.
+
+**Why containers?** Shell wrappers alone are bypassable (download a new binary, use raw syscalls). Network proxies alone can be ignored (agent can make direct TCP connections). Containers make both robust: read-only filesystem prevents installing bypass tools, `--internal` network prevents direct internet access.
+
+---
+
+## Quick Start
+
+### Terminal Prompts (fastest)
+
+```bash
+acp init --channel=prompt
+acp contain -- python my_agent.py
+```
+
+Every action pops a terminal prompt. Good for testing.
+
+### Mobile Approvals (recommended)
+
+```bash
+acp init --channel=telegram
+acp contain -- python my_agent.py
+```
+
+Actions appear on your phone. Approve or deny with one tap.
+
+---
+
+## Policy Engine
+
+Simple YAML. Rules top-to-bottom, first match wins, else default.
+
+```yaml
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+  - rm
+  - psql
+
+rules:
+  # Safe read commands
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "gh", args: "pr list*" }
+    action: allow
+
+  # Safe HTTP destinations
+  - match: { kind: http, host: "*.anthropic.com" }
+    action: allow
+  - match: { kind: http, host: "api.github.com" }
+    action: allow
+
+  # Needs approval
+  - match: { name: "gh", args: "commit*" }
+    action: ask
+    timeout: 120
+  - match: { name: "rm" }
+    action: ask
+
+  # Never allow
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+```
+
+The `wrap` list determines which commands get shell wrappers (Layer 1). Everything else still hits Layer 2 (HTTP proxy) if it makes network requests.
+
+Three built-in policy templates: `default.yml`, `strict.yml`, `openclaw.yml`. See [Policy Reference](docs/policy-reference.md).
+
+---
+
+## Platform Differences
+
+ACP works on any OS with Docker, but isolation strength varies:
+
+| | Linux | macOS / Windows |
+|---|---|---|
+| Docker network | `--internal` (no gateway) | Bridge + proxy env vars |
+| Isolation | Kernel-enforced | Proxy-enforced (weaker) |
+| Shell wrappers | Protected by read-only FS | Protected by read-only FS |
+| Container hardening | Full | Full |
+| Known gap | None | Agent could bypass proxy with direct TCP |
+
+**Linux** is the recommended platform for untrusted agents. Docker `--internal` networks have no outbound gateway at the kernel level — the agent literally cannot reach the internet.
+
+**macOS/Windows** works for typical agents but a deliberately adversarial agent could bypass the proxy env vars by making direct TCP connections to raw IPs.
+
+### Future: Docker Desktop microVM Sandboxes
+
+Docker Desktop offers [microVM-based sandboxes](https://docs.docker.com/ai/sandboxes/) on macOS/Windows that would provide strong isolation. However, `docker sandbox run` currently only supports a hardcoded list of agents (Claude, Gemini) and doesn't allow custom agents. When Docker adds support for arbitrary agents, ACP will integrate with microVM sandboxes for full cross-platform isolation.
+
+---
+
+## Comparison
+
+| Feature | ACP (v0.3) | LangGraph | CrewAI |
+|---|:---:|:---:|:---:|
+| Works with any agent/language | Yes | No | No |
+| Network-level enforcement | Yes (Docker) | No | No |
+| Shell command interception | Yes | No | No |
+| HTTP request interception | Yes | No | No |
+| Mobile approval (Telegram) | Yes | No | No |
+| Zero code changes to agent | Yes | No | No |
+| Agent can bypass | No (container) | Yes | Yes |
+| Audit trail | Yes | No | No |
+
+---
+
+## Works With Everything
+
+```bash
+acp contain -- openclaw gateway        # OpenClaw
+acp contain -- python my_agent.py      # Python
+acp contain -- node agent.js           # Node.js
+acp contain -- ./my-go-agent           # Go
+acp contain -- java -jar agent.jar     # Java
+```
+
+ACP wraps any process. No code changes needed.
 
 ---
 
@@ -147,7 +224,7 @@ npm install -g agent-2fa
 
 # Or run directly
 npx agent-2fa init
-npx agent-2fa run -- python my_agent.py
+npx agent-2fa contain -- python my_agent.py
 
 # Or from source
 git clone https://github.com/o1100/Agent-Consent-Protocol.git
@@ -158,216 +235,17 @@ node dist/index.js --help
 
 ---
 
-## Quick Start
-
-### Level 1 — Terminal Prompts (30 seconds)
-
-```bash
-acp init --channel=prompt
-acp run -- python my_agent.py
-```
-
-Every MCP tool call pops a terminal prompt. Good for testing.
-
-### Level 2 — Mobile Approvals (2 minutes)
-
-```bash
-acp init --channel=telegram
-acp secret set OPENAI_API_KEY=sk-...
-acp run -- node my_agent.js
-```
-
-Tool calls appear on your phone. Approve or deny with one tap.
-
-### Level 3 — With Network Isolation (requires root)
-
-```bash
-acp policy apply policies/strict.yml
-acp secret set STRIPE_KEY=sk_live_...
-sudo acp run --network-isolation -- python production_agent.py
-```
-
-Agent can only talk to ACP proxy. Everything else is dropped.
-
-### Level 4 — Docker Containment (recommended for untrusted agents)
-
-```bash
-acp setup                              # one-time: pulls base image
-acp run --contained -- python my_agent.py
-```
-
-Agent runs inside a Docker container. No network, no filesystem access, no shell commands — unless ACP approves them. This is the strongest mode.
-
-```bash
-# Custom image and workspace
-acp run --contained --image=python:3.12-slim --workspace=./project -- python agent.py
-```
-
----
-
-## Policy Engine
-
-```yaml
-version: "1"
-default_action: ask
-
-rules:
-  - match: { category: read }
-    action: allow
-
-  - match: { tool: exec }
-    action: ask
-    level: high
-
-  - match: { category: financial }
-    action: ask
-    level: critical
-    timeout: 300
-
-  - match: { tool: "*" }
-    rate_limit: 20/minute
-```
-
-Three built-in policies: `default.yml`, `strict.yml`, `development.yml`. See [Policy Reference](docs/policy-reference.md).
-
----
-
-## Credential Vault
-
-Secrets encrypted at rest (AES-256-GCM, key derived from Ed25519 private key via HKDF). Never exposed to the agent process.
-
-```bash
-acp secret set OPENAI_API_KEY=sk-...
-acp secret list
-acp secret remove OPENAI_API_KEY
-```
-
----
-
-## Comparison
-
-| Feature | ACP (v0.3) | LangGraph | CrewAI |
-|---|:---:|:---:|:---:|
-| Works with any agent/language | ✅ | ❌ | ❌ |
-| Intercepts MCP tool calls | ✅ | ❌ | ❌ |
-| Intercepts non-MCP actions | ✅ (contained mode) | Partial | Partial |
-| Network-level enforcement | ✅ (contained mode) | ❌ | ❌ |
-| Credential isolation | ✅ | ❌ | ❌ |
-| Mobile approval (Telegram) | ✅ | ❌ | ❌ |
-| Signed consent proofs | ✅ | ❌ | ❌ |
-| Tamper-evident audit trail | ✅ | ❌ | ❌ |
-| Zero code changes to agent | ✅ | ❌ | ❌ |
-| Agent can bypass (MCP calls) | No | Yes | Yes |
-| Agent can bypass (non-MCP) | No (contained mode) | Yes | Yes |
-
----
-
-## Works With Everything
-
-```bash
-acp run -- openclaw gateway        # OpenClaw
-acp run -- python my_agent.py      # Python
-acp run -- node agent.js           # Node.js
-acp run -- ./my-go-agent           # Go
-acp run -- java -jar agent.jar     # Java
-
-# Contained mode — full isolation
-acp run --contained -- openclaw gateway
-acp run --contained -- python my_agent.py
-acp run --contained -- node agent.js
-```
-
-**Without `--contained`:** ACP intercepts MCP tool calls and hooks shell/HTTP calls. Works well for trusted agents but a determined agent could bypass the hooks.
-
-**With `--contained`:** Agent runs in Docker. All I/O goes through ACP. No bypass path exists.
-
----
-
-## Running Claude Code in Contained Mode
-
-You can run Claude Code inside ACP's Docker containment. Every HTTP request, shell command, and file access Claude Code makes goes through ACP's consent gate.
-
-### Quick setup
-
-```bash
-# 1. Set up Telegram for approvals (interactive Claude Code needs it)
-acp init --channel=telegram
-
-# 2. Build the Docker image (one-time, includes Node.js + git + curl)
-acp setup claude-code-contained
-
-# 3. Run Claude Code interactively
-acp run --contained --interactive --channel=telegram --image claude-code-acp -- claude
-```
-
-Claude Code launches in your terminal. Consent requests go to your Telegram bot — approve or deny from your phone.
-
-### Why Telegram?
-
-Claude Code is interactive — it needs stdin for your input. ACP's terminal consent prompt also needs stdin. Since both can't share it, consent goes to Telegram (or a webhook) instead.
-
-### Non-interactive mode
-
-For one-shot tasks, use `--print`. No Telegram needed — ACP uses terminal prompts:
-
-```bash
-acp run --contained --image claude-code-acp -- claude --print "What files are in /workspace?"
-```
-
-### Policy for Claude Code
-
-Claude Code connects to `api.anthropic.com` and `platform.claude.com`. Add these to your policy (`~/.acp/policy.yml`) so they're auto-approved:
-
-```yaml
-version: "2"
-default_action: ask
-rules:
-  - match: { kind: http, host: "*.anthropic.com" }
-    action: allow
-  - match: { kind: http, host: "*.claude.com" }
-    action: allow
-  # ... your other rules
-```
-
-### Custom image
-
-The `acp setup claude-code-contained` command builds a `claude-code-acp` image with Node.js, Claude Code, git, curl, and wget. To customize it, see [`docker/Dockerfile.claude-code`](docker/Dockerfile.claude-code).
-
----
-
-## Roadmap
-
-ACP is at the **concept + working CLI** stage. Here's where it's heading:
-
-| Phase | Status | What |
-|-------|--------|------|
-| **v0.2** | ✅ Released | MCP proxy, consent gate, policy engine, Telegram, vault, audit trail |
-| **v0.3 — Current** | ✅ Released | Shell/HTTP/file interception, Docker containment (`--contained`), setup command, 97 tests |
-| **v0.4 — Ecosystem** | 🔄 Next | Slack/Discord channels, web dashboard, importable library (not just CLI) |
-| **v1.0 — Production** | Planned | Formal security audit, stable API, container-first deployment |
-
-See [THREAT-MODEL.md](THREAT-MODEL.md) for the detailed gap analysis.
-
----
-
 ## CLI Reference
 
 ```
 acp init [--channel=prompt|telegram|webhook]    Setup wizard
-acp setup                                       Pull Docker images, configure containment
-acp run [options] -- CMD                        Run agent in sandbox
-    --contained                                 Docker containment (recommended)
-    --interactive                               Pass stdin to container (for interactive agents)
-    --image=IMAGE                               Custom Docker image for contained mode
-    --workspace=PATH                            Mount workspace directory into container
-    --env=KEY                                   Forward host env var to container (repeatable)
-    --channel=TYPE                              Override consent channel (prompt/telegram/webhook)
+acp contain [options] -- CMD                    Run agent in contained Docker sandbox
+    --channel=TYPE                              Override consent channel
     --policy=FILE                               Policy file to use
-    --no-shell-intercept                        Disable shell interception
-    --no-http-intercept                         Disable HTTP interception
-acp secret set|list|remove                      Credential vault
-acp policy apply|show                           Policy management
-acp status                                      Show status
+    --image=IMAGE                               Custom Docker image
+    --workspace=PATH                            Mount workspace directory
+    --interactive                               Pass stdin to container
+    --env=KEY                                   Forward host env var (repeatable)
 ```
 
 ---
@@ -377,8 +255,19 @@ acp status                                      Show status
 ```bash
 cd cli
 npm install
-npm test    # 97 tests
+npm test    # 47 tests
 ```
+
+---
+
+## Roadmap
+
+| Phase | Status | What |
+|-------|--------|------|
+| **v0.2** | Done | MCP proxy, consent gate, policy engine, Telegram, vault, audit trail |
+| **v0.3 — Current** | Done | Container-first redesign, shell/HTTP interception, Docker containment, two-layer interception, 47 tests |
+| **v0.4 — Next** | Planned | Slack/Discord channels, Docker microVM integration (when available), gVisor runtime option |
+| **v1.0** | Planned | Formal security audit, FUSE workspace overlay, Firecracker microVM support |
 
 ---
 
@@ -396,10 +285,10 @@ npm test    # 97 tests
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). We especially need help with:
 
-- 🔌 Channel adapters (Slack, Discord, Signal, web dashboard)
-- 🧪 Security review and threat modelling
-- 📖 Documentation and tutorials
-- 🐧 Podman and rootless container support
+- Channel adapters (Slack, Discord, Signal, web dashboard)
+- Security review and container escape analysis
+- Documentation and tutorials
+- gVisor and Firecracker runtime support
 
 ## License
 
@@ -411,6 +300,6 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 **Agents use tools. Humans authorize them.**
 
-[⭐ Star on GitHub](https://github.com/o1100/Agent-Consent-Protocol) · [🌐 Website](https://agent2fa.dev)
+[Star on GitHub](https://github.com/o1100/Agent-Consent-Protocol) · [Website](https://agent2fa.dev)
 
 </div>

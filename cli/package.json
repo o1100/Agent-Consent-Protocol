@@ -1,6 +1,6 @@
 {
   "name": "agent-2fa",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "description": "2FA for AI Agents — Human consent via push notification for any agentic system. Docker-enforced, framework-agnostic.",
   "type": "module",
   "bin": {

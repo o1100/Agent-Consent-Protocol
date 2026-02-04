@@ -4,74 +4,63 @@
 
 | Threat | Protection | Status |
 |--------|-----------|--------|
-| Agent making MCP tool calls without human knowledge | Consent gate intercepts all MCP calls, requires approval | ✅ Working |
-| Agent accessing credentials directly | Vault encrypts secrets (AES-256-GCM), injects only after approval | ✅ Working |
-| Tampered audit trail | Hash-chained JSONL, each entry references previous hash | ✅ Working |
-| Forged consent proofs | Ed25519 signed proofs with canonical JSON | ✅ Working |
-| Unauthorized tool categories | YAML policy engine with allow/ask/deny rules | ✅ Working |
-| Accidental dangerous actions | Human-in-the-loop via Telegram/terminal before execution | ✅ Working |
-| Agent making direct HTTP/network calls | Docker `--internal` network blocks all outbound traffic (in contained mode) | ✅ Working (contained mode) |
-| Agent reading ACP's private key | Private key is not mounted in the Docker container (in contained mode) | ✅ Working (contained mode) |
-| Agent reading ACP's config/vault | `~/.acp/` is not mounted in the Docker container (in contained mode) | ✅ Working (contained mode) |
-| Agent using shell to bypass everything | Docker network isolation prevents outbound access regardless of method (in contained mode) | ✅ Working (contained mode) |
+| Agent running banned shell commands | Layer 1: shell wrappers intercept and gate via consent | Working |
+| Agent making unauthorized HTTP requests | Layer 2: HTTP forward proxy intercepts all outbound traffic | Working |
+| Agent bypassing shell wrappers | Container: read-only filesystem, no internet, can't install tools | Working |
+| Agent bypassing HTTP proxy | Container: Docker `--internal` network has no gateway (Linux) | Working (Linux) |
+| Agent reading ACP keys/config | Container: `~/.acp/` not mounted in container | Working |
+| Agent escalating privileges | Container: `--cap-drop=ALL`, `--no-new-privileges` | Working |
+| Prompt injection causing harmful actions | Human sees actual action before it executes via phone notification | Working |
+| Agent installing bypass tools | Container: `--read-only` filesystem, no package managers work | Working |
 
 ## What ACP Does NOT Protect Against (Yet)
 
-> **Note:** Threats marked "mitigated in contained mode" are resolved when running with `--contained`, which launches the agent inside a Docker container with `--internal` networking and no access to `~/.acp/`.
-
-| Threat | Why | Status |
-|--------|-----|--------|
-| Agent making direct HTTP/network calls (default mode) | ACP only proxies MCP — non-MCP traffic isn't intercepted | ✅ Mitigated in contained mode |
-| Agent reading ACP's private key (default mode) | Same OS user, plaintext key file | ✅ Mitigated in contained mode |
-| Agent reading ACP's config/vault (default mode) | Same OS user, file permissions | ✅ Mitigated in contained mode |
-| Replayed consent proofs | No server-side nonce store | Planned: Nonce persistence + expiry |
-| Agent using shell to bypass everything (default mode) | `exec()` / `child_process` outside MCP | ✅ Mitigated in contained mode |
-| Compromised host OS | ACP runs in userspace, not a hypervisor | Out of scope (use VMs/containers) |
+| Threat | Why | Planned Fix |
+|--------|-----|-------------|
+| macOS/Windows proxy bypass | Bridge network + env vars (not kernel-enforced) | Docker Desktop microVM sandboxes when they support custom agents |
+| Programmatic file deletion in workspace | `os.remove()` inside running interpreter bypasses shell wrapper | FUSE overlay on workspace (v2) |
+| Kernel exploits / container escape | Shared kernel in standard Docker containers | gVisor runtime or Firecracker microVMs |
+| Compromised host OS | ACP runs in userspace | Out of scope |
 
 ## Assumptions
 
-ACP's security model assumes:
-
-1. **The human approver is trusted** — ACP ensures humans decide, not that humans decide correctly.
-
-2. **The approval channel is secure** — Telegram bot API uses HTTPS. Terminal mode assumes local access is trusted.
-
-3. **The MCP protocol is the agent's interface (default mode)** — If agents use MCP for tool calls, ACP can intercept them. If they bypass MCP, ACP cannot help without contained mode. In contained mode, Docker network isolation ensures the agent cannot reach the internet regardless of method.
-
-4. **Docker for full isolation** — The `--contained` flag uses Docker with `--internal` networking to fully isolate the agent. Without it, ACP operates in proxy-only mode where enforcement depends on the agent actually using the MCP proxy.
+1. **The human approver is trusted.** ACP ensures humans decide, not that humans decide correctly.
+2. **The approval channel is secure.** Telegram uses HTTPS. Terminal mode assumes local access is trusted.
+3. **Docker is the enforcement boundary.** Without Docker, there is no isolation. ACP requires Docker.
+4. **Two-layer defense in depth.** Layer 1 (shell wrappers) provides semantic context. Layer 2 (HTTP proxy) is the catch-all. Both together provide robust coverage.
 
 ## Attacker Models
 
 ### Malicious Agent (Primary Threat)
-An AI agent that actively tries to bypass consent to perform unauthorized actions.
+An AI agent that actively tries to bypass consent.
 
-- **With contained mode (`--contained`):** Agent runs inside a Docker container with `--internal` networking. Cannot make direct network calls, cannot read ACP's keys or config (`~/.acp/` is not mounted). MCP calls require consent. ✅ Protected.
-- **Without contained mode:** Agent can make direct HTTP requests, read files (including `~/.acp/`), spawn processes. ACP only catches MCP calls routed through its proxy. ⚠️ Partial protection.
+- **Shell wrappers can't be removed** — read-only filesystem
+- **New tools can't be installed** — no internet access, no package managers
+- **Direct HTTP requests caught** — HTTP proxy intercepts all outbound traffic
+- **Container can't be escaped** — no capabilities, no privilege escalation
 
 ### Prompt Injection
-An external input tricks the agent into performing unintended actions.
+External input tricks the agent into performing unintended actions.
 
-- ACP catches this at the tool call level — even if the agent is tricked, the human sees the actual action before it executes. ✅ Protected (for MCP calls).
+- Layer 1 shows the actual command to the human (not what the agent claims)
+- Human makes the decision based on what they see
 
 ### Local Attacker (Same Machine)
-A user or process on the same machine targets ACP itself.
+- Agent runs in Docker container, cannot access host files or processes
+- ACP keys/config not mounted in container
 
-- In default mode, private keys and config are readable by the same OS user. ⚠️ Not protected without contained mode.
-- In contained mode, the agent has no access to `~/.acp/` (not mounted in the container). ✅ Protected.
+## Platform Security Comparison
 
-### Network Attacker
-An attacker intercepting traffic between ACP and MCP servers or Telegram.
-
-- Telegram uses HTTPS. Local MCP uses stdio/localhost. ✅ Reasonable protection for typical deployments.
+| | Linux | macOS/Windows |
+|---|---|---|
+| Network isolation | Kernel-enforced (`--internal`) | Proxy-enforced (env vars) |
+| Container hardening | Full | Full |
+| Shell wrappers | Protected by read-only FS | Protected by read-only FS |
+| Known gap | None | Agent could bypass proxy with raw TCP to IPs |
+| Future fix | N/A | Docker Desktop microVM sandboxes |
 
 ## Current Maturity
 
-ACP is at the **"working demo"** stage of the security protocol lifecycle, with Docker containment providing real enforcement boundaries:
-
 ```
-                  [You are here]
-                       ↓
-concept + CLI  →  working demo  →  formal threat model  →  hardened v1
+concept -> working prototype -> [You are here: v0.3] -> formal audit -> hardened v1
 ```
-
-The cryptographic primitives (Ed25519, AES-256-GCM, SHA-256, hash chains) are sound and use Node.js built-in crypto. With `--contained` mode, enforcement boundaries are now backed by Docker network isolation, addressing the major gaps in the default proxy-only mode.
