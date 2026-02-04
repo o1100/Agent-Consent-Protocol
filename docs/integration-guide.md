@@ -118,7 +118,7 @@ ACP injects these into the agent process:
 | `ACP_PROXY_URL` | `http://127.0.0.1:8443` | MCP proxy address |
 | `MCP_SERVER_URL` | `http://127.0.0.1:8443` | Alias for MCP SDK compat |
 | `ACP_SANDBOX` | `1` | Indicates running inside ACP |
-| `ACP_VERSION` | `0.3.0` | ACP version |
+| `ACP_VERSION` | `1.0.0` | ACP version |
 | `ACP_CONTAINED` | `1` | Set when running in Docker contained mode (`--contained`) |
 | `ACP_HTTP_INTERCEPT` | `1` | Set when HTTP interception is active |
 | `ACP_SHELL_INTERCEPT` | `1` | Set when shell command interception is active |

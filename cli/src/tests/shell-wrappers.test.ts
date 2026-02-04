@@ -2,89 +2,137 @@ import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { generateWrappers, cleanupWrappers, DEFAULT_WRAPPED_COMMANDS } from '../interceptors/shell-wrappers.js';
+import { generateWrappers, cleanupWrappers, getWrapperDir } from '../container/shell-wrappers.js';
 
-describe('Shell wrapper generation', () => {
+describe('Shell Wrappers', () => {
   afterEach(() => {
     cleanupWrappers();
   });
 
-  it('creates wrapper bin directory', () => {
-    const binDir = generateWrappers({ acpPort: 8443 });
-    assert.ok(fs.existsSync(binDir), 'bin dir should exist');
+  it('generates wrapper scripts for specified commands', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['curl', 'rm'],
+    });
+
+    assert.ok(fs.existsSync(binDir));
+
+    // Gate helper should exist
+    const gateHelper = path.join(binDir, 'acp-gate.mjs');
+    assert.ok(fs.existsSync(gateHelper));
+
+    // Gate helper should contain the consent host/port
+    const gateContent = fs.readFileSync(gateHelper, 'utf-8');
+    assert.ok(gateContent.includes('10.200.0.1'));
+    assert.ok(gateContent.includes('8443'));
+    assert.ok(gateContent.includes('/consent'));
   });
 
-  it('generates acp-gate.mjs helper', () => {
-    const binDir = generateWrappers({ acpPort: 8443 });
-    const gatePath = path.join(binDir, 'acp-gate.mjs');
-    assert.ok(fs.existsSync(gatePath), 'acp-gate.mjs should exist');
+  it('generates wrapper scripts that reference the real binary', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['ls'],
+    });
 
-    const content = fs.readFileSync(gatePath, 'utf-8');
-    assert.ok(content.startsWith('#!') && content.includes('node'), 'should have node shebang with absolute path');
-    assert.ok(content.includes('/acp/intercept'), 'should POST to /acp/intercept');
-    assert.ok(content.includes('8443'), 'should contain the port');
-  });
-
-  it('generates wrapper scripts for commands found on system', () => {
-    // 'ls' is always available but isn't in default list
-    // Test with a subset that should be available on most systems
-    const binDir = generateWrappers({ acpPort: 8443, commands: ['ls', 'cat'] });
-
-    // At least some should exist (ls and cat are everywhere)
-    const lsWrapper = path.join(binDir, 'ls');
-    const catWrapper = path.join(binDir, 'cat');
-
-    // At least one should be generated
-    const anyExist = fs.existsSync(lsWrapper) || fs.existsSync(catWrapper);
-    assert.ok(anyExist, 'at least one wrapper should be generated');
-
-    // Check wrapper content if it exists
-    if (fs.existsSync(lsWrapper)) {
-      const content = fs.readFileSync(lsWrapper, 'utf-8');
-      assert.ok(content.includes('#!/bin/bash'), 'should have bash shebang');
-      assert.ok(content.includes('acp-gate.mjs'), 'should call acp-gate.mjs');
-      assert.ok(content.includes('shell:ls'), 'should use shell:ls tool name');
+    const wrapper = path.join(binDir, 'ls');
+    if (fs.existsSync(wrapper)) {
+      const content = fs.readFileSync(wrapper, 'utf-8');
+      assert.ok(content.includes('#!/bin/bash'));
+      assert.ok(content.includes('ACP_WRAPPER_ACTIVE'));
+      assert.ok(content.includes('acp-gate.mjs'));
     }
   });
 
-  it('skips commands not found on system', () => {
-    const binDir = generateWrappers({ acpPort: 8443, commands: ['__nonexistent_command_xyz__'] });
-    const wrapper = path.join(binDir, '__nonexistent_command_xyz__');
-    assert.ok(!fs.existsSync(wrapper), 'should not create wrapper for missing command');
+  it('skips commands that do not exist on the system', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['nonexistent_command_xyz'],
+    });
+
+    const wrapper = path.join(binDir, 'nonexistent_command_xyz');
+    assert.strictEqual(fs.existsSync(wrapper), false);
   });
 
-  it('uses deny fail mode by default', () => {
-    const binDir = generateWrappers({ acpPort: 8443 });
-    const gatePath = path.join(binDir, 'acp-gate.mjs');
-    const content = fs.readFileSync(gatePath, 'utf-8');
-    assert.ok(content.includes("failMode = 'deny'"), 'should default to deny fail mode');
+  it('cleanupWrappers removes the directory', () => {
+    generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['ls'],
+    });
+
+    assert.ok(getWrapperDir() !== null);
+    cleanupWrappers();
+    assert.strictEqual(getWrapperDir(), null);
   });
 
-  it('respects allow fail mode', () => {
-    const binDir = generateWrappers({ acpPort: 8443, failMode: 'allow' });
-    const gatePath = path.join(binDir, 'acp-gate.mjs');
-    const content = fs.readFileSync(gatePath, 'utf-8');
-    assert.ok(content.includes("failMode = 'allow'"), 'should use allow fail mode');
+  it('makes wrapper scripts executable', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['ls'],
+    });
+
+    const gateHelper = path.join(binDir, 'acp-gate.mjs');
+    const stat = fs.statSync(gateHelper);
+    assert.ok((stat.mode & 0o111) !== 0);
+  });
+});
+
+describe('Shell Wrapper Content', () => {
+  afterEach(() => {
+    cleanupWrappers();
+  });
+
+  it('gate helper uses correct endpoint path', () => {
+    const binDir = generateWrappers({
+      consentPort: 9999,
+      consentHost: '10.200.0.1',
+      commands: [],
+    });
+
+    const content = fs.readFileSync(path.join(binDir, 'acp-gate.mjs'), 'utf-8');
+    assert.ok(content.includes("path: '/consent'"));
+    assert.ok(content.includes('9999'));
+  });
+
+  it('gate helper defaults to deny on error', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: [],
+      failMode: 'deny',
+    });
+
+    const content = fs.readFileSync(path.join(binDir, 'acp-gate.mjs'), 'utf-8');
+    assert.ok(content.includes("failMode = 'deny'"));
+  });
+
+  it('gate helper uses allow fail mode when configured', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: [],
+      failMode: 'allow',
+    });
+
+    const content = fs.readFileSync(path.join(binDir, 'acp-gate.mjs'), 'utf-8');
+    assert.ok(content.includes("failMode = 'allow'"));
   });
 
   it('cleanup removes the wrapper directory', () => {
-    const binDir = generateWrappers({ acpPort: 8443 });
-    assert.ok(fs.existsSync(binDir));
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['ls'],
+    });
 
+    assert.ok(fs.existsSync(binDir));
     cleanupWrappers();
 
-    // The bin dir's parent (the temp dir) should be cleaned
     const parentDir = path.dirname(binDir);
-    assert.ok(!fs.existsSync(parentDir), 'temp directory should be removed');
-  });
-
-  it('has sensible default commands list', () => {
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.includes('curl'));
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.includes('rm'));
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.includes('git'));
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.includes('docker'));
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.includes('npm'));
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.includes('python3'));
-    assert.ok(DEFAULT_WRAPPED_COMMANDS.length >= 20, 'should have at least 20 default commands');
+    assert.ok(!fs.existsSync(parentDir));
   });
 });

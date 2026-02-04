@@ -5,6 +5,41 @@ version: "1"
 default_action: ask
 
 rules:
+  # ── HTTP Rules ──────────────────────────────────
+  # (Enforced in both proxy-only and contained mode)
+
+  # LLM providers
+  - match: { kind: http, host: "*.anthropic.com" }
+    action: allow
+  - match: { kind: http, host: "*.openai.com" }
+    action: allow
+
+  # Common safe APIs
+  - match: { kind: http, host: "*.googleapis.com" }
+    action: allow
+  - match: { kind: http, host: "api.github.com" }
+    action: allow
+
+  # All other HTTP
+  - match: { kind: http }
+    action: ask
+
+  # ── Shell Rules ─────────────────────────────────
+  # Container runtime basics
+  - match: { kind: shell, tool: "shell:node" }
+    action: allow
+  - match: { kind: shell, tool: "shell:bash" }
+    action: allow
+  - match: { kind: shell, tool: "shell:sh" }
+    action: allow
+
+  # All other shell commands need approval
+  - match: { kind: shell }
+    action: ask
+    level: high
+
+  # ── MCP Tool Rules ─────────────────────────────
+
   # Reading is always safe
   - match: { category: read }
     action: allow

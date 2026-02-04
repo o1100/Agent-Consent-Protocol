@@ -1,52 +1,43 @@
 # ACP Policy Preset — OpenClaw
-# Sensible defaults for running OpenClaw agents under ACP.
+#
+# In contained mode (--contained), ACP intercepts all outbound network
+# traffic from the container. Every HTTP/HTTPS connection is gated by
+# domain, regardless of which internal tool initiated it. Local-only
+# operations (file read/write, local exec) stay inside the container
+# and are bounded by Docker isolation (read-only fs, no capabilities).
+#
+# MCP tool rules below apply when tools are routed through ACP's MCP
+# proxy. In contained mode with openclaw, internal tools bypass the
+# MCP proxy but their network traffic is still caught at the HTTP level.
 
 version: "2"
 default_action: ask
 
 rules:
-  # ── MCP Tool Rules ─────────────────────────────
-  # Read operations are always safe
-  - match: { category: read }
+  # ── HTTP Rules ──────────────────────────────────
+  # (Enforced in both proxy-only and contained mode)
+
+  # Telegram (required for Telegram bots)
+  - match: { kind: http, host: "api.telegram.org" }
+    action: allow
+  - match: { kind: http, host: "*.telegram.org" }
     action: allow
 
-  # Web search is safe
-  - match: { tool: web_search }
-    action: allow
-
-  # ── Shell Rules ────────────────────────────────
-  # Git read operations are safe
-  - match: { kind: shell, tool: "shell:git", command: "git status*" }
-    action: allow
-  - match: { kind: shell, tool: "shell:git", command: "git log*" }
-    action: allow
-  - match: { kind: shell, tool: "shell:git", command: "git diff*" }
-    action: allow
-  - match: { kind: shell, tool: "shell:git", command: "git branch*" }
-    action: allow
-
-  # Git push/force push needs approval
-  - match: { kind: shell, tool: "shell:git", command: "git push*" }
-    action: ask
-    level: high
-
-  # All other shell commands need approval
-  - match: { kind: shell, tool: "shell:*" }
-    action: ask
-    level: high
-
-  # ── HTTP Rules ─────────────────────────────────
-  # Common safe API domains
-  - match: { kind: http, host: "*.googleapis.com" }
+  # LLM providers
+  - match: { kind: http, host: "*.anthropic.com" }
     action: allow
   - match: { kind: http, host: "*.openai.com" }
     action: allow
-  - match: { kind: http, host: "*.anthropic.com" }
+
+  # Common safe APIs
+  - match: { kind: http, host: "*.googleapis.com" }
     action: allow
   - match: { kind: http, host: "api.github.com" }
     action: allow
+  - match: { kind: http, host: "api.search.brave.com" }
+    action: allow
 
-  # Payment/sensitive domains need critical approval
+  # Payment/sensitive domains
   - match: { kind: http, host: "*.stripe.com" }
     action: ask
     level: critical
@@ -54,27 +45,52 @@ rules:
     action: ask
     level: critical
 
-  # All other HTTP
+  # All other HTTP — prompt
   - match: { kind: http }
     action: ask
 
-  # ── File Rules ─────────────────────────────────
-  # Workspace file writes are OK
-  - match: { kind: file, tool: "file:write", path: "~/workspace/**" }
+  # ── Shell Rules ─────────────────────────────────
+  # (Enforced when shell wrappers are active)
+
+  # Container runtime basics
+  - match: { kind: shell, tool: "shell:node" }
+    action: allow
+  - match: { kind: shell, tool: "shell:bash" }
+    action: allow
+  - match: { kind: shell, tool: "shell:sh" }
     action: allow
 
-  # Deleting files needs approval
-  - match: { kind: file, tool: "file:rm" }
+  # Git read-only
+  - match: { kind: shell, tool: "shell:git", command: "git status*" }
+    action: allow
+  - match: { kind: shell, tool: "shell:git", command: "git log*" }
+    action: allow
+  - match: { kind: shell, tool: "shell:git", command: "git diff*" }
+    action: allow
+
+  # All other shell
+  - match: { kind: shell }
     action: ask
     level: high
 
-  # ── Financial ──────────────────────────────────
+  # ── MCP Tool Rules ─────────────────────────────
+  # (Apply when agent routes tools through ACP's MCP proxy)
+
+  # Read operations
+  - match: { category: read }
+    action: allow
+
+  # Web search
+  - match: { tool: web_search }
+    action: allow
+
+  # Financial
   - match: { category: financial }
     action: ask
     level: critical
     timeout: 300
 
-  # ── Safety net ─────────────────────────────────
+  # Safety net
   - match: { tool: "*" }
     action: ask
     rate_limit: 30/minute

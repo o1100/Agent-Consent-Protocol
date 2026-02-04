@@ -3,36 +3,24 @@
 /**
  * ACP CLI — Agent Consent Protocol
  *
- * One command to wrap any agent in a consent-enforced sandbox.
- * Intercepts MCP tool calls, shell commands, HTTP requests, and file operations.
- * Docker containment mode (--contained) provides kernel-enforced isolation.
+ * 2FA for AI Agents. Human authorization via push notification
+ * for any agentic system running inside a Docker container.
  *
  * Usage:
  *   acp init [--channel=prompt|telegram|webhook]
- *   acp run [--contained] [--image <image>] [--workspace <dir>] -- <command>
- *   acp setup claude-code|openclaw
- *   acp secret set KEY=VALUE
- *   acp secret list
- *   acp secret remove KEY
- *   acp policy apply <file>
- *   acp policy show
- *   acp status
+ *   acp contain [options] -- <command>
  */
 
 import { Command } from 'commander';
-import { initCommand } from './commands/init.js';
-import { runCommand } from './commands/run.js';
-import { setupCommand } from './commands/setup.js';
-import { secretCommand } from './commands/secret.js';
-import { policyCommand } from './commands/policy.js';
-import { statusCommand } from './commands/status.js';
+import { initCommand } from './cli/init.js';
+import { containCommand } from './cli/contain.js';
 
 const program = new Command();
 
 program
   .name('acp')
   .description('Agent Consent Protocol — 2FA for AI Agents')
-  .version('0.3.0');
+  .version('1.0.0');
 
 // acp init
 program
@@ -41,73 +29,21 @@ program
   .option('--channel <type>', 'Approval channel: prompt, telegram, webhook', 'prompt')
   .action(initCommand);
 
-// acp run -- <command>
+// acp contain -- <command>
 program
-  .command('run')
-  .description('Run an agent inside the ACP sandbox')
-  .option('--contained', 'Enable Docker containment (kernel-enforced isolation)', false)
-  .option('--interactive', 'Pass stdin to container (for interactive agents like Claude Code)', false)
-  .option('--image <image>', 'Docker image to use (default: auto-detect from command)')
-  .option('--workspace <dir>', 'Workspace directory to mount in container (default: CWD)')
-  .option('--env <KEY>', 'Forward host env var to container (repeatable)', (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
-  .option('--network-isolation', 'Deprecated: use --contained instead', false)
-  .option('--policy <file>', 'Policy file to use')
-  .option('--port <port>', 'ACP proxy port', '8443')
-  .option('--http-proxy-port <port>', 'HTTP forward proxy port', '8444')
-  .option('--upstream <command>', 'Upstream MCP server command (repeatable)', (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
-  .option('--channel <type>', 'Override approval channel: prompt, telegram, webhook')
-  .option('--no-shell-intercept', 'Disable shell command interception')
-  .option('--no-http-intercept', 'Disable HTTP request interception')
+  .command('contain')
+  .description('Run an agent inside a consent-gated Docker container')
+  .option('--interactive', 'Pass stdin to container (requires non-terminal channel)', false)
+  .option('--image <image>', 'Docker image (default: auto-detect from command)')
+  .option('--workspace <dir>', 'Workspace directory to mount (default: CWD)')
+  .option('--policy <file>', 'Policy YAML file')
+  .option('--channel <type>', 'Override consent channel: prompt, telegram, webhook')
+  .option('--env <KEY>', 'Forward host env var to container (repeatable)',
+    (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
+  .option('--consent-port <port>', 'Consent server port (Layer 1)', '8443')
+  .option('--http-proxy-port <port>', 'HTTP proxy port (Layer 2)', '8444')
   .allowUnknownOption(true)
   .argument('[command...]', 'Agent command to run')
-  .action(runCommand);
-
-// acp setup
-program
-  .command('setup <integration>')
-  .description('Set up integration (claude-code, openclaw)')
-  .option('--port <port>', 'ACP proxy port', '8443')
-  .action(setupCommand);
-
-// acp secret
-const secret = program
-  .command('secret')
-  .description('Manage the encrypted credential vault');
-
-secret
-  .command('set <pair>')
-  .description('Store a secret (KEY=VALUE)')
-  .action((pair: string) => secretCommand('set', pair));
-
-secret
-  .command('list')
-  .description('List stored secrets')
-  .action(() => secretCommand('list'));
-
-secret
-  .command('remove <key>')
-  .description('Remove a secret')
-  .action((key: string) => secretCommand('remove', key));
-
-// acp policy
-const policy = program
-  .command('policy')
-  .description('Manage consent policies');
-
-policy
-  .command('apply <file>')
-  .description('Apply a YAML policy file')
-  .action((file: string) => policyCommand('apply', file));
-
-policy
-  .command('show')
-  .description('Show current policy')
-  .action(() => policyCommand('show'));
-
-// acp status
-program
-  .command('status')
-  .description('Show ACP status and running sessions')
-  .action(statusCommand);
+  .action(containCommand);
 
 program.parse();

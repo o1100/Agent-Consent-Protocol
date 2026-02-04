@@ -1,7 +1,7 @@
 {
   "name": "agent-2fa",
-  "version": "0.3.0",
-  "description": "2FA for AI Agents — Human authorization for any agentic system. Network-enforced, framework-agnostic.",
+  "version": "1.0.0",
+  "description": "2FA for AI Agents — Human consent via push notification for any agentic system. Docker-enforced, framework-agnostic.",
   "type": "module",
   "bin": {
     "acp": "./dist/index.js",
@@ -23,14 +23,14 @@
     "agent",
     "consent",
     "authorization",
-    "mcp",
     "2fa",
     "sandbox",
+    "docker",
     "security",
-    "ed25519",
     "audit",
     "human-in-the-loop",
-    "ai-safety"
+    "ai-safety",
+    "proxy"
   ],
   "author": "Agent Consent Protocol Contributors",
   "license": "Apache-2.0",

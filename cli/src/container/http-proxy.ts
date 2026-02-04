@@ -1,41 +1,39 @@
 /**
- * HTTP Forward Proxy with ACP Consent
+ * HTTP Forward Proxy — Layer 2 interception
  *
- * Intercepts HTTP and HTTPS requests from the sandboxed agent process.
+ * Intercepts all HTTP/HTTPS traffic from the container.
  * For each request:
- *   - HTTP: Parse method + URL → consent gate → forward or 403
- *   - HTTPS (CONNECT): Parse host:port → consent gate → TCP tunnel or 403
+ *   - HTTP: parse method + URL => consent gate => forward or 403
+ *   - HTTPS (CONNECT): parse host:port => consent gate => tunnel or 403
  *
- * HTTPS uses CONNECT tunneling (no MITM, no CA certs needed).
- * Domain-level control only for HTTPS; full URL for HTTP.
+ * Checks for active approval tokens from Layer 1 to avoid
+ * double-prompting the human.
  *
  * Uses only Node.js built-ins: http, net.
  */
 
 import http from 'node:http';
 import net from 'node:net';
-import { ConsentGate } from './consent-gate.js';
-import { AuditLogger } from '../audit/logger.js';
+import type { ConsentGate } from '../core/gate.js';
+import type { Action } from '../core/types.js';
+import { hasValidApprovalToken, clearExpiredTokens } from './consent-server.js';
 
 interface HttpProxyOptions {
   port: number;
-  consentGate: ConsentGate;
-  auditLogger: AuditLogger;
+  gate: ConsentGate;
   listenAddress?: string;
 }
 
 export class HttpProxy {
   private server: http.Server | null = null;
   private port: number;
-  private consentGate: ConsentGate;
-  private auditLogger: AuditLogger;
+  private gate: ConsentGate;
   private listenAddress: string;
 
   constructor(options: HttpProxyOptions) {
     this.port = options.port;
-    this.consentGate = options.consentGate;
-    this.auditLogger = options.auditLogger;
-    this.listenAddress = options.listenAddress || '127.0.0.1';
+    this.gate = options.gate;
+    this.listenAddress = options.listenAddress || '0.0.0.0';
   }
 
   async start(): Promise<void> {
@@ -43,7 +41,6 @@ export class HttpProxy {
       await this.handleHttpRequest(req, res);
     });
 
-    // Handle CONNECT method for HTTPS tunneling
     this.server.on('connect', (req, clientSocket: net.Socket, head) => {
       this.handleConnect(req, clientSocket, head);
     });
@@ -51,8 +48,7 @@ export class HttpProxy {
     return new Promise((resolve, reject) => {
       this.server!.on('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE') {
-          console.error(`  ❌ HTTP proxy port ${this.port} is already in use.`);
-          reject(err);
+          reject(new Error(`HTTP proxy port ${this.port} is already in use`));
         } else {
           reject(err);
         }
@@ -76,17 +72,18 @@ export class HttpProxy {
   }
 
   /**
-   * Handle plain HTTP requests (non-CONNECT).
-   * Parse the full URL from the request line, check consent, then forward.
+   * Handle plain HTTP requests.
    */
-  private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private async handleHttpRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): Promise<void> {
     const fullUrl = req.url || '';
     let parsedUrl: URL;
 
     try {
       parsedUrl = new URL(fullUrl);
     } catch {
-      // Relative URL — construct from host header
       try {
         parsedUrl = new URL(fullUrl, `http://${req.headers.host}`);
       } catch {
@@ -98,37 +95,33 @@ export class HttpProxy {
 
     const method = req.method || 'GET';
     const host = parsedUrl.hostname;
-    const tool = `http:${method}`;
 
-    // Check consent
-    try {
-      const result = await this.consentGate.process({
-        tool,
-        arguments: {
-          method,
-          url: fullUrl,
-          host,
-          path: parsedUrl.pathname,
-        },
-        requestId: `http_${Date.now().toString(36)}`,
+    // Check if Layer 1 already approved this traffic
+    clearExpiredTokens();
+    if (hasValidApprovalToken()) {
+      this.forwardHttpRequest(req, res, parsedUrl, method);
+      return;
+    }
+
+    const action: Action = {
+      name: `http:${method}`,
+      args: fullUrl,
+      meta: {
         kind: 'http',
-      });
+        host,
+        method,
+        port: parseInt(parsedUrl.port) || 80,
+      },
+    };
 
-      if (!result.allowed) {
-        this.auditLogger.record({
-          event_type: 'tool_call_denied',
-          agent: 'sandbox-agent',
-          tool,
-          category: 'network',
-          risk_level: 'medium',
-          decision: 'denied',
-          metadata: { url: fullUrl, reason: result.reason },
-        });
+    try {
+      const verdict = await this.gate(action);
 
+      if (verdict.decision === 'deny') {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           error: 'Blocked by ACP',
-          reason: result.reason || 'HTTP request denied by consent gate.',
+          reason: verdict.reason,
         }));
         return;
       }
@@ -141,17 +134,24 @@ export class HttpProxy {
       return;
     }
 
-    // Forward the request
+    this.forwardHttpRequest(req, res, parsedUrl, method);
+  }
+
+  private forwardHttpRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    parsedUrl: URL,
+    method: string
+  ): void {
     const port = parseInt(parsedUrl.port) || 80;
     const forwardOptions: http.RequestOptions = {
-      hostname: host,
+      hostname: parsedUrl.hostname,
       port,
       path: parsedUrl.pathname + parsedUrl.search,
       method,
       headers: { ...req.headers },
     };
 
-    // Remove proxy-specific headers
     delete (forwardOptions.headers as Record<string, unknown>)['proxy-connection'];
 
     const proxyReq = http.request(forwardOptions, (proxyRes) => {
@@ -160,16 +160,6 @@ export class HttpProxy {
     });
 
     proxyReq.on('error', (err) => {
-      this.auditLogger.record({
-        event_type: 'tool_call_error',
-        agent: 'sandbox-agent',
-        tool,
-        category: 'network',
-        risk_level: 'medium',
-        decision: 'error',
-        metadata: { url: fullUrl, error: err.message },
-      });
-
       if (!res.headersSent) {
         res.writeHead(502, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Upstream connection failed', reason: err.message }));
@@ -177,21 +167,11 @@ export class HttpProxy {
     });
 
     req.pipe(proxyReq, { end: true });
-
-    this.auditLogger.record({
-      event_type: 'tool_call_forwarded',
-      agent: 'sandbox-agent',
-      tool,
-      category: 'network',
-      risk_level: 'medium',
-      decision: 'approved',
-      metadata: { url: fullUrl, method, host },
-    });
   }
 
   /**
    * Handle HTTPS CONNECT tunneling.
-   * Domain-level control: consent gate sees host:port but not the encrypted content.
+   * Domain-level consent only (encrypted content is not inspected).
    */
   private async handleConnect(
     req: http.IncomingMessage,
@@ -202,26 +182,28 @@ export class HttpProxy {
     const [host, portStr] = target.split(':');
     const port = parseInt(portStr) || 443;
 
-    // Check consent for the CONNECT tunnel
-    try {
-      const result = await this.consentGate.process({
-        tool: 'http:CONNECT',
-        arguments: { host, port, target },
-        requestId: `connect_${Date.now().toString(36)}`,
+    // Check if Layer 1 already approved this traffic
+    clearExpiredTokens();
+    if (hasValidApprovalToken()) {
+      this.establishTunnel(host, port, clientSocket, head);
+      return;
+    }
+
+    const action: Action = {
+      name: 'http:CONNECT',
+      args: target,
+      meta: {
         kind: 'http',
-      });
+        host,
+        method: 'CONNECT',
+        port,
+      },
+    };
 
-      if (!result.allowed) {
-        this.auditLogger.record({
-          event_type: 'tool_call_denied',
-          agent: 'sandbox-agent',
-          tool: 'http:CONNECT',
-          category: 'network',
-          risk_level: 'medium',
-          decision: 'denied',
-          metadata: { host, port, reason: result.reason },
-        });
+    try {
+      const verdict = await this.gate(action);
 
+      if (verdict.decision === 'deny') {
         clientSocket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         clientSocket.end();
         return;
@@ -232,47 +214,31 @@ export class HttpProxy {
       return;
     }
 
-    // Establish TCP tunnel to the target
+    this.establishTunnel(host, port, clientSocket, head);
+  }
+
+  private establishTunnel(
+    host: string,
+    port: number,
+    clientSocket: net.Socket,
+    head: Buffer
+  ): void {
     const serverSocket = net.connect(port, host, () => {
       clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-
-      // Send any buffered data
       if (head.length > 0) {
         serverSocket.write(head);
       }
-
-      // Bidirectional pipe
       serverSocket.pipe(clientSocket);
       clientSocket.pipe(serverSocket);
     });
 
-    serverSocket.on('error', (err) => {
-      this.auditLogger.record({
-        event_type: 'tool_call_error',
-        agent: 'sandbox-agent',
-        tool: 'http:CONNECT',
-        category: 'network',
-        risk_level: 'medium',
-        decision: 'error',
-        metadata: { host, port, error: err.message },
-      });
-
+    serverSocket.on('error', () => {
       clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
       clientSocket.end();
     });
 
     clientSocket.on('error', () => {
       serverSocket.end();
-    });
-
-    this.auditLogger.record({
-      event_type: 'tool_call_forwarded',
-      agent: 'sandbox-agent',
-      tool: 'http:CONNECT',
-      category: 'network',
-      risk_level: 'medium',
-      decision: 'approved',
-      metadata: { host, port },
     });
   }
 }

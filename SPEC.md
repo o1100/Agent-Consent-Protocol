@@ -1,6 +1,6 @@
-# Agent Consent Protocol (ACP) — Specification v0.3
+# Agent Consent Protocol (ACP) — Specification v1.0
 
-**Version:** 0.3.0 (Draft)
+**Version:** 1.0.0 (Draft)
 **Status:** Draft RFC
 **License:** Apache 2.0
 
@@ -152,7 +152,7 @@ Credentials are:
 ```json
 {
   "type": "consent_request",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "id": "cr_<unique_id>",
   "timestamp": "ISO-8601",
   "expires_at": "ISO-8601",
@@ -183,7 +183,7 @@ Credentials are:
 ```json
 {
   "type": "consent_response",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "request_id": "cr_<id>",
   "timestamp": "ISO-8601",
   "decision": "approved | denied | approved_with_modifications",
@@ -333,7 +333,7 @@ Tampering with any event breaks the chain from that point forward.
 ```json
 {
   "type": "audit_event",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "id": "ae_<unique>",
   "timestamp": "ISO-8601",
   "event_type": "string",

@@ -1,0 +1,77 @@
+# ACP Default Policy — Sensible defaults for everyday use
+# Ask for dangerous actions, allow reads, deny destructive patterns.
+
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+  - wget
+  - ssh
+  - psql
+  - mysql
+  - rm
+  - rmdir
+  - python
+  - node
+  - pip
+  - npm
+
+rules:
+  # --- ALLOW: safe read operations ---
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "head" }
+    action: allow
+  - match: { name: "tail" }
+    action: allow
+  - match: { name: "grep" }
+    action: allow
+  - match: { name: "find" }
+    action: allow
+  - match: { name: "gh", args: "pr list*" }
+    action: allow
+  - match: { name: "gh", args: "issue list*" }
+    action: allow
+  - match: { name: "git", args: "status*" }
+    action: allow
+  - match: { name: "git", args: "log*" }
+    action: allow
+  - match: { name: "git", args: "diff*" }
+    action: allow
+
+  # --- ALLOW: common safe HTTP destinations ---
+  - match: { kind: http, host: "*.anthropic.com" }
+    action: allow
+  - match: { kind: http, host: "*.openai.com" }
+    action: allow
+  - match: { kind: http, host: "*.googleapis.com" }
+    action: allow
+  - match: { kind: http, host: "api.github.com" }
+    action: allow
+
+  # --- ASK: needs human approval ---
+  - match: { name: "gh", args: "commit*" }
+    action: ask
+    timeout: 120
+  - match: { name: "gh", args: "pr create*" }
+    action: ask
+    timeout: 120
+  - match: { name: "git", args: "push*" }
+    action: ask
+    timeout: 120
+  - match: { name: "curl" }
+    action: ask
+  - match: { name: "rm" }
+    action: ask
+  - match: { name: "psql" }
+    action: ask
+
+  # --- DENY: never allow ---
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny

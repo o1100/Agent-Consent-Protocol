@@ -1,0 +1,51 @@
+# ACP Strict Policy — Paranoid mode
+# Ask for everything. Only basic reads are auto-approved.
+
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+  - wget
+  - ssh
+  - scp
+  - nc
+  - psql
+  - mysql
+  - rm
+  - rmdir
+  - mv
+  - chmod
+  - python
+  - python3
+  - node
+  - pip
+  - pip3
+  - npm
+  - npx
+  - docker
+  - kubectl
+
+rules:
+  # --- ALLOW: only the most basic reads ---
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+
+  # --- ALLOW: LLM providers (so the agent can function) ---
+  - match: { kind: http, host: "*.anthropic.com" }
+    action: allow
+  - match: { kind: http, host: "*.openai.com" }
+    action: allow
+
+  # --- DENY: destructive patterns ---
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny
+  - match: { kind: http, host: "*.evil.com" }
+    action: deny
+
+  # Everything else falls through to default: ask
