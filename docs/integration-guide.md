@@ -7,10 +7,18 @@ ACP wraps processes — not frameworks. Any agent that runs as a command can be 
 ## OpenClaw
 
 ```bash
-acp contain -- openclaw gateway
+# Configure ACP + OpenClaw in one step
+acp init --channel=telegram
+# Says "y" to OpenClaw setup, provides messaging bot token + API keys
+
+# Start OpenClaw inside ACP containment (one command)
+acp start openclaw
+# Auto-creates ~/openclaw-workspace, installs openclaw, runs gateway in Docker
 ```
 
-OpenClaw's shell commands and HTTP requests will be intercepted by ACP. No code changes needed.
+The `acp init` wizard generates both `~/.acp/config.yml` (ACP consent config) and `~/.openclaw/openclaw.json` (OpenClaw config with correct schema). The `acp start openclaw` command handles workspace setup and runs the gateway inside a Docker container with full ACP containment — no separate install step needed.
+
+See [examples/openclaw/](../examples/openclaw/) for the full setup guide.
 
 ## Custom Agents (Any Language)
 

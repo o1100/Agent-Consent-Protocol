@@ -216,7 +216,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log('  ACP initialized. Try:');
   console.log('');
   console.log('    acp contain -- python my_agent.py');
-  console.log('    acp contain --policy strict.yml -- openclaw start');
+  console.log('    acp start openclaw');
   console.log('');
 }
 
@@ -300,8 +300,8 @@ async function setupOpenClaw(
   }
 
   console.log('');
-  console.log('  OpenClaw configured. To start the messaging bot:');
+  console.log('  OpenClaw configured. To start the gateway inside ACP containment:');
   console.log('');
-  console.log('    openclaw gateway');
+  console.log('    acp start openclaw');
   console.log('');
 }

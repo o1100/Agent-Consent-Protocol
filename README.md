@@ -19,7 +19,7 @@
 
 > [!WARNING]
 > **Experimental prototype (v0.3) — not production hardened.**
-> ACP is a working implementation with 47 tests passing. The concept is sound and the container-based isolation is real, but it has not undergone formal security review. On Linux, isolation is kernel-enforced. On macOS/Windows, isolation is proxy-enforced and weaker. Read the [Platform Differences](#platform-differences) section. See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full picture.
+> ACP is a working implementation with 48 tests passing. The concept is sound and the container-based isolation is real, but it has not undergone formal security review. On Linux, isolation is kernel-enforced. On macOS/Windows, isolation is proxy-enforced and weaker. Read the [Platform Differences](#platform-differences) section. See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full picture.
 
 ---
 
@@ -116,6 +116,27 @@ acp contain -- python my_agent.py
 
 Actions appear on your phone. Approve or deny with one tap.
 
+### OpenClaw + Telegram (full setup)
+
+See the [OpenClaw setup guide](examples/openclaw/) for the complete walkthrough. Summary:
+
+```bash
+# 1. Install ACP
+npm install -g agent-consent-protocol
+
+# 2. Configure ACP (consent bot) + OpenClaw (messaging bot)
+acp init --channel=telegram
+# The wizard asks for your consent bot token, chat ID,
+# and optionally configures the OpenClaw messaging bot.
+
+# 3. Start OpenClaw inside ACP containment (one command)
+acp start openclaw
+# Auto-creates workspace, installs openclaw, runs gateway in Docker
+
+# 4. Run any other agent through ACP
+acp contain -- python my_agent.py
+```
+
 ---
 
 ## Policy Engine
@@ -207,11 +228,6 @@ Designed for [OpenClaw](https://github.com/o1100/OpenClaw) — works with any co
 ## Works With Any Agent
 
 ```bash
-# OpenClaw (primary) — requires workspace setup, see examples/openclaw/
-acp contain --workspace=./my-workspace \
-  --env=ANTHROPIC_API_KEY \
-  -- node /workspace/node_modules/openclaw/openclaw.mjs gateway
-
 # Python / Node.js / Go / Java — just works
 acp contain -- python my_agent.py
 acp contain -- node agent.js
@@ -219,7 +235,7 @@ acp contain -- ./my-go-agent
 acp contain -- java -jar agent.jar
 ```
 
-OpenClaw is the primary supported agent. See [examples/openclaw/](examples/openclaw/) for the full setup guide. ACP wraps any process — no code changes needed.
+Designed for [OpenClaw](https://github.com/o1100/OpenClaw) — works with any command. See [examples/openclaw/](examples/openclaw/) for the full OpenClaw setup guide.
 
 ---
 
@@ -227,7 +243,7 @@ OpenClaw is the primary supported agent. See [examples/openclaw/](examples/openc
 
 - **Node.js >= 22** — [install via NodeSource](https://github.com/nodesource/distributions) or `nvm`
 - **Docker** — [install Docker Engine](https://docs.docker.com/engine/install/) (Linux) or Docker Desktop (macOS/Windows)
-- **At least 512MB RAM** — Docker image pulls and npm installs can OOM on very small VMs. Add swap if running on a constrained machine.
+- **At least 512MB RAM** — ACP itself is lightweight, but if you're also running OpenClaw (~500MB heap), you'll want at least 2GB RAM or 2GB swap.
 
 ## Install
 
@@ -235,16 +251,66 @@ OpenClaw is the primary supported agent. See [examples/openclaw/](examples/openc
 # npm (recommended)
 npm install -g agent-consent-protocol
 
-# Or run directly
-npx agent-consent-protocol init
-npx agent-consent-protocol contain -- python my_agent.py
-
-# Or from source (e.g. to test a branch)
-git clone https://github.com/o1100/Agent-Consent-Protocol.git
+# Or from source
+git clone --branch v0.3.0 https://github.com/o1100/Agent-Consent-Protocol.git
 cd Agent-Consent-Protocol/cli
 npm install && npm run build && sudo npm link
-acp --help
+acp --version
 ```
+
+## Full Install (Ubuntu/Debian)
+
+Tested on Ubuntu 24.04 with Node.js 22, Docker 28.
+
+**One-liner** — installs Node.js, Docker, ACP, then walks you through configuration:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/o1100/Agent-Consent-Protocol/v0.3.0/install.sh | bash
+```
+
+Or if you already cloned the repo:
+
+```bash
+./install.sh
+```
+
+<details>
+<summary>Manual step-by-step</summary>
+
+```bash
+# Prerequisites
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs docker.io
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Swap (recommended if RAM < 2GB and running OpenClaw)
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+
+# Install ACP
+git clone --branch v0.3.0 https://github.com/o1100/Agent-Consent-Protocol.git
+cd Agent-Consent-Protocol/cli
+npm install && npm run build && sudo npm link
+acp --version   # 0.3.0
+
+# Configure ACP with Telegram
+acp init --channel=telegram
+# Prompts for: consent bot token, chat ID
+# Optionally configures OpenClaw messaging bot (~/.openclaw/openclaw.json)
+
+# Start OpenClaw inside ACP containment (optional — only if using OpenClaw)
+acp start openclaw
+# Auto-creates ~/openclaw-workspace, installs openclaw, runs gateway in Docker
+# Press Ctrl+C to stop, then continue with smoke tests below
+
+# Smoke test
+acp contain -- python3 -c 'print("hello")'
+acp contain --image node:22 -- curl https://example.com   # triggers Telegram consent
+cat ~/.acp/audit.jsonl
+```
+
+</details>
 
 ---
 
@@ -252,6 +318,10 @@ acp --help
 
 ```
 acp init [--channel=prompt|telegram|webhook]    Setup wizard
+    --config=DIR                                ACP config directory (default: ~/.acp)
+
+acp start <preset>                              Start a known agent inside ACP containment
+    --workspace=DIR                             Workspace directory (default: ~/openclaw-workspace)
     --config=DIR                                ACP config directory (default: ~/.acp)
 
 acp contain [options] -- CMD                    Run agent in contained Docker sandbox
@@ -274,7 +344,7 @@ acp contain [options] -- CMD                    Run agent in contained Docker sa
 ```bash
 cd cli
 npm install
-npm test    # 47 tests
+npm test    # 48 tests
 ```
 
 ---
@@ -284,7 +354,7 @@ npm test    # 47 tests
 | Phase | Status | What |
 |-------|--------|------|
 | **v0.2** | Done | MCP proxy, consent gate, policy engine, Telegram, vault, audit trail |
-| **v0.3 — Current** | Done | Container-first redesign, shell/HTTP interception, Docker containment, two-layer interception, 47 tests |
+| **v0.3 — Current** | Done | Container-first redesign, shell/HTTP interception, Docker containment, two-layer interception, 48 tests |
 | **v0.4 — Next** | Planned | Slack/Discord channels, Docker microVM integration (when available), gVisor runtime option |
 | **v1.0** | Planned | Formal security audit, FUSE workspace overlay, Firecracker microVM support |
 

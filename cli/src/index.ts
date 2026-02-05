@@ -8,12 +8,14 @@
  *
  * Usage:
  *   acp init [--channel=prompt|telegram|webhook]
+ *   acp start <preset> [--workspace=DIR]
  *   acp contain [options] -- <command>
  */
 
 import { Command } from 'commander';
 import { initCommand } from './cli/init.js';
 import { containCommand } from './cli/contain.js';
+import { startCommand } from './cli/start.js';
 
 const program = new Command();
 
@@ -48,5 +50,14 @@ program
   .allowUnknownOption(true)
   .argument('[command...]', 'Agent command to run')
   .action(containCommand);
+
+// acp start <preset>
+program
+  .command('start')
+  .description('Start a known agent inside ACP containment')
+  .argument('<preset>', 'Agent preset to run (e.g. openclaw)')
+  .option('--workspace <dir>', 'Workspace directory (default: ~/openclaw-workspace)')
+  .option('--config <dir>', 'ACP config directory (default: ~/.acp)')
+  .action(startCommand);
 
 program.parse();

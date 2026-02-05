@@ -1,5 +1,9 @@
 #!/bin/bash
-# Sets up an OpenClaw workspace for use with ACP
+# Manual OpenClaw workspace setup — alternative to `acp start openclaw`
+#
+# Prefer using `acp start openclaw` which handles this automatically.
+# This script is for manual/custom setups only.
+#
 # Usage: ./setup.sh [workspace-dir]
 
 set -e
@@ -9,6 +13,8 @@ WORKSPACE_DIR="${1:-./openclaw-workspace}"
 echo ""
 echo "  ACP — OpenClaw Workspace Setup"
 echo "  ───────────────────────────────"
+echo ""
+echo "  Note: prefer 'acp start openclaw' which does this automatically."
 echo ""
 
 mkdir -p "$WORKSPACE_DIR"
@@ -35,10 +41,11 @@ fi
 echo ""
 echo "  Workspace ready at $WORKSPACE_DIR"
 echo ""
-echo "  To run OpenClaw through ACP:"
-echo "    acp contain --workspace=$WORKSPACE_DIR --env=ANTHROPIC_API_KEY \\"
-echo "      -- node /workspace/node_modules/.bin/openclaw gateway"
+echo "  To run OpenClaw through ACP (recommended):"
+echo "    acp start openclaw --workspace=$WORKSPACE_DIR"
 echo ""
-echo "  To start the messaging bot outside ACP:"
-echo "    openclaw gateway"
+echo "  Or manually with acp contain:"
+echo "    acp contain --writable --workspace=$WORKSPACE_DIR \\"
+echo "      --policy=templates/openclaw.yml \\"
+echo "      -- node node_modules/.bin/openclaw gateway"
 echo ""

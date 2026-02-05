@@ -25,7 +25,7 @@ import { HttpProxy } from '../container/http-proxy.js';
 import { generateWrappers, cleanupWrappers } from '../container/shell-wrappers.js';
 import * as docker from '../container/docker.js';
 
-interface ContainOptions {
+export interface ContainOptions {
   image?: string;
   workspace?: string;
   policy?: string;
