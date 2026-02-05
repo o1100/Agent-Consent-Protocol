@@ -10,6 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { containCommand, type ContainOptions } from './contain.js';
 
@@ -96,13 +97,16 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   }
 
   // Copy OpenClaw config into workspace (container HOME=/workspace)
-  // Strip gateway.auth before copying — doctor --fix may add auth modes
-  // that the containerised gateway version doesn't recognise.
+  // Ensure gateway.auth has a valid token — OpenClaw requires one.
   const ocConfigDest = path.join(workspaceDir, '.openclaw');
   fs.mkdirSync(ocConfigDest, { recursive: true });
   try {
     const raw = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8'));
-    if (raw.gateway?.auth) delete raw.gateway.auth;
+    if (!raw.gateway) raw.gateway = {};
+    raw.gateway.auth = {
+      mode: 'token',
+      token: crypto.randomBytes(32).toString('hex'),
+    };
     fs.writeFileSync(
       path.join(ocConfigDest, 'openclaw.json'),
       JSON.stringify(raw, null, 2) + '\n',
