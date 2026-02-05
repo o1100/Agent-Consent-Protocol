@@ -85,15 +85,19 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const prompt = createPrompt();
 
   if (options.channel === 'telegram') {
-    console.log('  Telegram Setup');
-    console.log('  1. Create a bot via @BotFather and get the token');
+    console.log('  Telegram Consent Bot Setup');
+    console.log('  ──────────────────────────');
+    console.log('  This bot sends you approval requests when agents try to');
+    console.log('  run sensitive commands. You approve or deny from Telegram.');
+    console.log('');
+    console.log('  1. Create a NEW bot via @BotFather (name it e.g. "ACP Consent")');
     console.log('  2. Open Telegram and search for your bot by username');
     console.log('  3. Send any message to the bot (e.g. "hi")');
     console.log('  4. Get your chat ID from:');
     console.log('     https://api.telegram.org/bot<TOKEN>/getUpdates');
     console.log('');
 
-    const botToken = await prompt.ask('  Telegram Bot Token: ');
+    const botToken = await prompt.ask('  Consent Bot Token: ');
     const chatId = await prompt.ask('  Telegram Chat ID: ');
 
     if (!botToken || !chatId) {
@@ -234,11 +238,12 @@ async function setupOpenClaw(
   console.log('');
   console.log('  OpenClaw Messaging Bot Setup');
   console.log('  ────────────────────────────');
-  console.log('  This configures the OpenClaw gateway (~/.openclaw/openclaw.json).');
-  console.log('  You need a separate bot token from @BotFather for the messaging bot.');
+  console.log('  This is a DIFFERENT bot from the consent bot above.');
+  console.log('  The messaging bot is the one users chat with to talk to the AI agent.');
+  console.log('  Create another bot via @BotFather (name it e.g. "OpenClaw Agent").');
   console.log('');
 
-  const msgBotToken = await prompt.ask('  Messaging Bot Token: ');
+  const msgBotToken = await prompt.ask('  Messaging Bot Token (different from consent bot): ');
   if (!msgBotToken) {
     console.log('  Skipping OpenClaw setup (no token provided).');
     return;
