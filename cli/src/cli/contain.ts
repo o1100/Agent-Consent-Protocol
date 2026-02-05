@@ -31,6 +31,7 @@ interface ContainOptions {
   workspace?: string;
   policy?: string;
   interactive: boolean;
+  writable: boolean;
   channel?: string;
   env: string[];
   consentPort: string;
@@ -190,6 +191,7 @@ export async function containCommand(
     httpProxyPort,
     wrapperBinDir,
     interactive,
+    writable: options.writable,
     env: forwardedEnv,
   });
 

@@ -17,7 +17,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { execSync } from 'node:child_process';
 
 interface WrapperConfig {
   consentPort: number;
@@ -39,26 +38,12 @@ export function generateWrappers(config: WrapperConfig): string {
   const binDir = path.join(wrapperDir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
 
-  // Resolve the real node binary path so wrappers don't recurse
-  let realNodePath = 'node';
-  try {
-    const nodePaths = execSync('which -a node 2>/dev/null || true', { encoding: 'utf-8' })
-      .trim()
-      .split('\n')
-      .filter(p => p && !p.startsWith(binDir));
-    if (nodePaths.length > 0) {
-      realNodePath = nodePaths[0];
-    }
-  } catch {
-    // keep fallback
-  }
-
   // Generate the gate helper
-  generateGateHelper(binDir, config, failMode, realNodePath);
+  generateGateHelper(binDir, config, failMode);
 
   // Generate a wrapper for each command
   for (const cmd of commands) {
-    generateWrapper(binDir, cmd, config, failMode, realNodePath);
+    generateWrapper(binDir, cmd, failMode);
   }
 
   return binDir;
@@ -71,10 +56,9 @@ export function generateWrappers(config: WrapperConfig): string {
 function generateGateHelper(
   binDir: string,
   config: WrapperConfig,
-  failMode: string,
-  realNodePath: string
+  failMode: string
 ): void {
-  const script = `#!${realNodePath}
+  const script = `#!/usr/bin/env node
 // ACP Gate Helper — POSTs to /consent and returns the decision.
 // Usage: node acp-gate.mjs <command-name> <full-command-string>
 // Exit codes: 0 = allowed, 1 = denied, 2 = error
@@ -145,48 +129,39 @@ req.end();
 
 /**
  * Generate a wrapper script for a single command.
+ * Binary resolution happens at runtime inside the container,
+ * not at generation time on the host.
  */
 function generateWrapper(
   binDir: string,
   cmd: string,
-  config: WrapperConfig,
-  failMode: string,
-  realNodePath: string
+  failMode: string
 ): void {
-  // Find the real binary path (outside our wrapper dir)
-  let realPath: string;
-  try {
-    const allPaths = execSync(`which -a ${cmd} 2>/dev/null || true`, { encoding: 'utf-8' })
-      .trim()
-      .split('\n')
-      .filter(p => p && !p.startsWith(binDir));
-
-    if (allPaths.length === 0) {
-      // Command not found on system — skip
-      return;
-    }
-    realPath = allPaths[0];
-  } catch {
-    return;
-  }
-
   const script = `#!/bin/bash
 # ACP wrapper for: ${cmd}
-# Real binary: ${realPath}
 set -euo pipefail
 
 # Recursion guard
 if [ -n "\${ACP_WRAPPER_ACTIVE:-}" ]; then
-  exec "${realPath}" "$@"
+  exec "$(PATH="\${PATH#/usr/local/bin/acp-wrappers:}" command -v "${cmd}")" "$@"
 fi
 export ACP_WRAPPER_ACTIVE=1
 
 ACP_GATE_DIR="$(dirname "$0")"
-REAL_CMD="${realPath}"
 FULL_CMD="${cmd} $*"
 
+# Find real node binary (skip wrapper directory)
+REAL_NODE=$(PATH="\${PATH#/usr/local/bin/acp-wrappers:}" command -v node 2>/dev/null || echo "node")
+
+# Find real binary for this command
+REAL_CMD=$(PATH="\${PATH#/usr/local/bin/acp-wrappers:}" command -v "${cmd}" 2>/dev/null || true)
+if [ -z "$REAL_CMD" ]; then
+  echo "acp: ${cmd} not found in container" >&2
+  exit 127
+fi
+
 # Ask consent server for permission
-if ${realNodePath} "$ACP_GATE_DIR/acp-gate.mjs" "${cmd}" "$FULL_CMD"; then
+if "$REAL_NODE" "$ACP_GATE_DIR/acp-gate.mjs" "${cmd}" "$FULL_CMD"; then
   unset ACP_WRAPPER_ACTIVE
   exec "$REAL_CMD" "$@"
 else

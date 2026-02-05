@@ -29,7 +29,7 @@ describe('Shell Wrappers', () => {
     assert.ok(gateContent.includes('/consent'));
   });
 
-  it('generates wrapper scripts that reference the real binary', () => {
+  it('generates wrapper scripts with dynamic runtime resolution', () => {
     const binDir = generateWrappers({
       consentPort: 8443,
       consentHost: '10.200.0.1',
@@ -37,23 +37,28 @@ describe('Shell Wrappers', () => {
     });
 
     const wrapper = path.join(binDir, 'ls');
-    if (fs.existsSync(wrapper)) {
-      const content = fs.readFileSync(wrapper, 'utf-8');
-      assert.ok(content.includes('#!/bin/bash'));
-      assert.ok(content.includes('ACP_WRAPPER_ACTIVE'));
-      assert.ok(content.includes('acp-gate.mjs'));
-    }
+    assert.ok(fs.existsSync(wrapper));
+    const content = fs.readFileSync(wrapper, 'utf-8');
+    assert.ok(content.includes('#!/bin/bash'));
+    assert.ok(content.includes('ACP_WRAPPER_ACTIVE'));
+    assert.ok(content.includes('acp-gate.mjs'));
+    // Should resolve binary at runtime, not bake host paths
+    assert.ok(content.includes('command -v'));
+    assert.ok(content.includes('PATH='));
   });
 
-  it('skips commands that do not exist on the system', () => {
+  it('generates wrappers for all commands (resolution at runtime)', () => {
     const binDir = generateWrappers({
       consentPort: 8443,
       consentHost: '10.200.0.1',
       commands: ['nonexistent_command_xyz'],
     });
 
+    // Wrappers are always generated; binary resolution happens at runtime in the container
     const wrapper = path.join(binDir, 'nonexistent_command_xyz');
-    assert.strictEqual(fs.existsSync(wrapper), false);
+    assert.ok(fs.existsSync(wrapper));
+    const content = fs.readFileSync(wrapper, 'utf-8');
+    assert.ok(content.includes('nonexistent_command_xyz'));
   });
 
   it('cleanupWrappers removes the directory', () => {

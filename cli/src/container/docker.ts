@@ -28,6 +28,7 @@ export interface DockerContainerOptions {
   memoryLimit?: string;
   pidsLimit?: number;
   interactive?: boolean;
+  writable?: boolean;
   env?: Record<string, string>;
 }
 
@@ -172,6 +173,7 @@ export function runContained(options: DockerContainerOptions): ChildProcess {
     memoryLimit = '2g',
     pidsLimit = 256,
     interactive = false,
+    writable = false,
     env = {},
   } = options;
 
@@ -195,9 +197,11 @@ export function runContained(options: DockerContainerOptions): ChildProcess {
     ...(platform === 'darwin' || platform === 'win32'
       ? ['--add-host=acp-host:host-gateway', '--dns=127.0.0.1']
       : []),
-    '--read-only',
+    ...(writable ? [] : ['--read-only']),
     '--tmpfs', '/tmp:size=100m',
     '--tmpfs', '/home:size=50m',
+    '--tmpfs', '/root:size=50m',
+    '--tmpfs', '/var/tmp:size=100m',
     '--cap-drop=ALL',
     '--security-opt=no-new-privileges',
     `--pids-limit=${pidsLimit}`,
@@ -213,16 +217,25 @@ export function runContained(options: DockerContainerOptions): ChildProcess {
     '-e', `ACP_CONSENT_URL=http://${proxyHost}:${consentPort}`,
     '-e', 'ACP_SANDBOX=1',
     '-e', 'ACP_CONTAINED=1',
-    '-e', 'ACP_VERSION=1.0.0',
-    '-e', 'NODE_OPTIONS=--use-env-proxy',
+    '-e', 'ACP_VERSION=0.3.0',
     '-e', 'HOME=/workspace',
   ];
 
   // Mount shell wrappers if generated
   if (wrapperBinDir) {
     args.push('-v', `${wrapperBinDir}:/usr/local/bin/acp-wrappers:ro`);
-    // Prepend wrappers to PATH inside the container
-    args.push('-e', 'PATH=/usr/local/bin/acp-wrappers:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin');
+    // Query the image's default PATH so we don't lose custom entries
+    let containerPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+    try {
+      const envJson = execSync(
+        `docker inspect --format '{{json .Config.Env}}' ${image}`,
+        { encoding: 'utf-8', stdio: 'pipe', timeout: 10000 }
+      ).trim();
+      const envVars: string[] = JSON.parse(envJson);
+      const pathVar = envVars.find(e => e.startsWith('PATH='));
+      if (pathVar) containerPath = pathVar.substring(5);
+    } catch { /* use default */ }
+    args.push('-e', `PATH=/usr/local/bin/acp-wrappers:${containerPath}`);
   }
 
   // Custom environment variables
