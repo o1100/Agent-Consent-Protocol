@@ -1,14 +1,13 @@
 {
-  "name": "agent-2fa",
+  "name": "agent-consent-protocol",
   "version": "0.3.0",
   "description": "2FA for AI Agents — Human consent via push notification for any agentic system. Docker-enforced, framework-agnostic.",
   "type": "module",
   "bin": {
-    "acp": "./dist/index.js",
-    "agent-2fa": "./dist/index.js"
+    "acp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "test": "tsc && node --test dist/tests/*.test.js",

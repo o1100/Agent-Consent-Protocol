@@ -7,7 +7,7 @@
 **One command. Any agent. Human-controlled.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![npm: agent-2fa](https://img.shields.io/npm/v/agent-2fa.svg)](https://www.npmjs.com/package/agent-2fa)
+[![npm: agent-consent-protocol](https://img.shields.io/npm/v/agent-consent-protocol.svg)](https://www.npmjs.com/package/agent-consent-protocol)
 [![Node.js CI](https://github.com/o1100/Agent-Consent-Protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/o1100/Agent-Consent-Protocol/actions)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -39,7 +39,7 @@ Every framework has its own half-baked human-in-the-loop. They're all:
 ACP runs any agent inside a Docker container with no direct internet access. Two layers of interception catch shell commands and HTTP requests. Every sensitive action requires human approval via your phone. The agent can't bypass it — the container has no way out except through ACP.
 
 ```bash
-npm install -g agent-2fa
+npm install -g agent-consent-protocol
 acp init
 acp contain -- python my_agent.py
 ```
@@ -233,16 +233,16 @@ OpenClaw is the primary supported agent. See [examples/openclaw/](examples/openc
 
 ```bash
 # npm (recommended)
-npm install -g agent-2fa
+npm install -g agent-consent-protocol
 
 # Or run directly
-npx agent-2fa init
-npx agent-2fa contain -- python my_agent.py
+npx agent-consent-protocol init
+npx agent-consent-protocol contain -- python my_agent.py
 
 # Or from source (e.g. to test a branch)
 git clone https://github.com/o1100/Agent-Consent-Protocol.git
 cd Agent-Consent-Protocol/cli
-npm install && npm run build && npm link
+npm install && npm run build && sudo npm link
 acp --help
 ```
 

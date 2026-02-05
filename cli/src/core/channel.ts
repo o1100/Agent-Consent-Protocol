@@ -80,6 +80,17 @@ export class TelegramChannel implements Channel {
         if (data.ok && data.result) {
           for (const update of data.result) {
             offset = update.update_id;
+
+            // Reply to text messages so the user knows the bot is alive
+            const msg = update.message;
+            if (msg?.text) {
+              this.telegramApi('sendMessage', {
+                chat_id: msg.chat.id,
+                text: 'ACP bot is active. Waiting for a consent decision on the buttons above.',
+              }).catch(() => {});
+              continue;
+            }
+
             const cb = update.callback_query;
             if (!cb) continue;
 
@@ -197,9 +208,9 @@ function formatAction(action: Action): string {
     // For runtime wrappers, extract the script basename as the display name
     let displayName = action.name;
     if (['node', 'python', 'python3'].includes(action.name) && action.args) {
-      const match = action.args.match(/^(?:node|python3?)\s+(\S+)/);
-      if (match) {
-        displayName = path.basename(match[1]);
+      const firstArg = action.args.trim().split(/\s+/)[0];
+      if (firstArg && !firstArg.startsWith('-')) {
+        displayName = path.basename(firstArg);
       }
     }
     lines.push(`*Command:* \`${displayName}\``);

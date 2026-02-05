@@ -3,12 +3,13 @@
  *
  * Creates ~/.acp/ with config and default policy.
  * Configures the consent channel (Telegram or webhook).
- * No more keys, vault, or hooks — just channel + policy.
+ * Optionally configures OpenClaw messaging bot (~/.openclaw/openclaw.json).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { execSync } from 'node:child_process';
 import { stringify as yamlStringify } from 'yaml';
 
 interface InitOptions {
@@ -105,8 +106,37 @@ export async function initCommand(options: InitOptions): Promise<void> {
       bot_token: botToken,
       chat_id: chatId,
     };
-    console.log('  Telegram configured');
+
+    // Send a test message to verify the connection works
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${botToken}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: 'ACP connected. Consent requests will appear here when agents need approval.',
+          }),
+        }
+      );
+      const data = await res.json() as { ok: boolean; description?: string };
+      if (data.ok) {
+        console.log('  Telegram verified (test message sent)');
+      } else {
+        console.error(`  Warning: Telegram test failed: ${data.description}`);
+        console.error('  Check your bot token and chat ID.');
+      }
+    } catch {
+      console.error('  Warning: Could not reach Telegram API.');
+    }
     console.log('');
+
+    // --- Optional: OpenClaw messaging bot setup ---
+    const setupOC = await prompt.ask('  Configure OpenClaw messaging bot? [y/N] ');
+    if (setupOC.toLowerCase() === 'y' || setupOC.toLowerCase() === 'yes') {
+      await setupOpenClaw(prompt, chatId);
+    }
   } else if (options.channel === 'webhook') {
     const url = await prompt.ask('  Webhook URL: ');
     const secret = await prompt.ask('  Webhook Secret (optional): ');
@@ -187,5 +217,91 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log('');
   console.log('    acp contain -- python my_agent.py');
   console.log('    acp contain --policy strict.yml -- openclaw start');
+  console.log('');
+}
+
+// ---------------------------------------------------------------------------
+// OpenClaw messaging bot configuration
+// ---------------------------------------------------------------------------
+
+async function setupOpenClaw(
+  prompt: { ask: (q: string) => Promise<string> },
+  chatId: string,
+): Promise<void> {
+  const OC_DIR = path.join(process.env.HOME || '~', '.openclaw');
+  const OC_CONFIG = path.join(OC_DIR, 'openclaw.json');
+
+  console.log('');
+  console.log('  OpenClaw Messaging Bot Setup');
+  console.log('  ────────────────────────────');
+  console.log('  This configures the OpenClaw gateway (~/.openclaw/openclaw.json).');
+  console.log('  You need a separate bot token from @BotFather for the messaging bot.');
+  console.log('');
+
+  const msgBotToken = await prompt.ask('  Messaging Bot Token: ');
+  if (!msgBotToken) {
+    console.log('  Skipping OpenClaw setup (no token provided).');
+    return;
+  }
+
+  // Verify the messaging bot token
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${msgBotToken}/getMe`);
+    const data = await res.json() as { ok: boolean; result?: { username: string }; description?: string };
+    if (data.ok) {
+      console.log(`  Bot verified: @${data.result?.username}`);
+    } else {
+      console.error(`  Warning: Bot token check failed: ${data.description}`);
+    }
+  } catch {
+    console.error('  Warning: Could not verify bot token.');
+  }
+
+  const anthropicKey = await prompt.ask('  Anthropic API Key (ANTHROPIC_API_KEY): ');
+  const braveKey = await prompt.ask('  Brave Search API Key (optional, press Enter to skip): ');
+
+  // Build the OpenClaw config with correct schema
+  const ocConfig: Record<string, unknown> = {
+    channels: {
+      telegram: {
+        enabled: true,
+        botToken: msgBotToken,
+        dmPolicy: 'allowlist',
+        allowFrom: [chatId],
+      },
+    },
+  };
+
+  // API keys go in the env section (loaded as process env by OpenClaw)
+  const env: Record<string, string> = {};
+  if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
+  if (braveKey) env.BRAVE_API_KEY = braveKey;
+  if (Object.keys(env).length > 0) {
+    ocConfig.env = env;
+  }
+
+  // Write config
+  fs.mkdirSync(OC_DIR, { recursive: true });
+  fs.writeFileSync(OC_CONFIG, JSON.stringify(ocConfig, null, 2) + '\n', 'utf-8');
+  console.log(`  OpenClaw config saved to ${OC_CONFIG}`);
+
+  // Try running openclaw setup if the binary is available
+  try {
+    const ocBin = execSync('which openclaw 2>/dev/null || echo ""', { encoding: 'utf-8' }).trim();
+    if (ocBin) {
+      console.log('  Running openclaw setup...');
+      execSync(`${ocBin} setup --non-interactive 2>/dev/null || true`, {
+        encoding: 'utf-8',
+        timeout: 15000,
+      });
+    }
+  } catch {
+    // openclaw not installed yet — that's fine
+  }
+
+  console.log('');
+  console.log('  OpenClaw configured. To start the messaging bot:');
+  console.log('');
+  console.log('    openclaw gateway');
   console.log('');
 }

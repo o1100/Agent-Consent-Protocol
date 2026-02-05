@@ -22,16 +22,23 @@ fi
 echo "  Installing openclaw..."
 npm install openclaw@latest
 
+# Copy OpenClaw config into workspace if it exists on host
+if [ -d "$HOME/.openclaw" ] && [ -f "$HOME/.openclaw/openclaw.json" ]; then
+  mkdir -p .openclaw
+  cp "$HOME/.openclaw/openclaw.json" .openclaw/openclaw.json
+  echo "  Copied ~/.openclaw/openclaw.json into workspace"
+else
+  echo "  No ~/.openclaw/openclaw.json found."
+  echo "  Run 'acp init --channel=telegram' first to generate it."
+fi
+
 echo ""
 echo "  Workspace ready at $WORKSPACE_DIR"
 echo ""
-echo "  Next steps:"
-echo "    1. Copy your .openclaw/ config into $WORKSPACE_DIR/.openclaw/"
-echo "       cp -r ~/.openclaw $WORKSPACE_DIR/.openclaw"
+echo "  To run OpenClaw through ACP:"
+echo "    acp contain --workspace=$WORKSPACE_DIR --env=ANTHROPIC_API_KEY \\"
+echo "      -- node /workspace/node_modules/.bin/openclaw gateway"
 echo ""
-echo "    2. Make sure workspace path in config.yml is set to /workspace"
-echo ""
-echo "    3. Run:"
-echo "       acp contain --workspace=$WORKSPACE_DIR --env=ANTHROPIC_API_KEY \\"
-echo "         -- node /workspace/node_modules/openclaw/openclaw.mjs gateway"
+echo "  To start the messaging bot outside ACP:"
+echo "    openclaw gateway"
 echo ""

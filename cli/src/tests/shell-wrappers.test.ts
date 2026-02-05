@@ -19,7 +19,7 @@ describe('Shell Wrappers', () => {
     assert.ok(fs.existsSync(binDir));
 
     // Gate helper should exist
-    const gateHelper = path.join(binDir, 'acp-gate.mjs');
+    const gateHelper = path.join(binDir, 'acp-gate.sh');
     assert.ok(fs.existsSync(gateHelper));
 
     // Gate helper should contain the consent host/port
@@ -41,7 +41,7 @@ describe('Shell Wrappers', () => {
     const content = fs.readFileSync(wrapper, 'utf-8');
     assert.ok(content.includes('#!/bin/bash'));
     assert.ok(content.includes('ACP_WRAPPER_ACTIVE'));
-    assert.ok(content.includes('acp-gate.mjs'));
+    assert.ok(content.includes('acp-gate.sh'));
     // Should resolve binary at runtime, not bake host paths
     assert.ok(content.includes('command -v'));
     assert.ok(content.includes('PATH='));
@@ -80,7 +80,7 @@ describe('Shell Wrappers', () => {
       commands: ['ls'],
     });
 
-    const gateHelper = path.join(binDir, 'acp-gate.mjs');
+    const gateHelper = path.join(binDir, 'acp-gate.sh');
     const stat = fs.statSync(gateHelper);
     assert.ok((stat.mode & 0o111) !== 0);
   });
@@ -98,8 +98,8 @@ describe('Shell Wrapper Content', () => {
       commands: [],
     });
 
-    const content = fs.readFileSync(path.join(binDir, 'acp-gate.mjs'), 'utf-8');
-    assert.ok(content.includes("path: '/consent'"));
+    const content = fs.readFileSync(path.join(binDir, 'acp-gate.sh'), 'utf-8');
+    assert.ok(content.includes('/consent'));
     assert.ok(content.includes('9999'));
   });
 
@@ -111,8 +111,8 @@ describe('Shell Wrapper Content', () => {
       failMode: 'deny',
     });
 
-    const content = fs.readFileSync(path.join(binDir, 'acp-gate.mjs'), 'utf-8');
-    assert.ok(content.includes("failMode = 'deny'"));
+    const content = fs.readFileSync(path.join(binDir, 'acp-gate.sh'), 'utf-8');
+    assert.ok(content.includes('FAIL_MODE="deny"'));
   });
 
   it('gate helper uses allow fail mode when configured', () => {
@@ -123,8 +123,22 @@ describe('Shell Wrapper Content', () => {
       failMode: 'allow',
     });
 
-    const content = fs.readFileSync(path.join(binDir, 'acp-gate.mjs'), 'utf-8');
-    assert.ok(content.includes("failMode = 'allow'"));
+    const content = fs.readFileSync(path.join(binDir, 'acp-gate.sh'), 'utf-8');
+    assert.ok(content.includes('FAIL_MODE="allow"'));
+  });
+
+  it('wrapper sends real command name for policy matching', () => {
+    const binDir = generateWrappers({
+      consentPort: 8443,
+      consentHost: '10.200.0.1',
+      commands: ['node'],
+    });
+
+    const content = fs.readFileSync(path.join(binDir, 'node'), 'utf-8');
+    // Wrapper should send "node" as the command name, not a display name
+    assert.ok(content.includes('acp-gate.sh" "node"'));
+    // Should NOT contain display name renaming logic
+    assert.ok(!content.includes('DISPLAY_NAME'));
   });
 
   it('cleanup removes the wrapper directory', () => {
