@@ -268,6 +268,9 @@ async function setupOpenClaw(
 
   // Build the OpenClaw config with correct schema
   const ocConfig: Record<string, unknown> = {
+    gateway: {
+      mode: 'local',
+    },
     channels: {
       telegram: {
         enabled: true,
