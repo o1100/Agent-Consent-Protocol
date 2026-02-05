@@ -79,7 +79,7 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     execSync('npm install openclaw@latest', {
       cwd: workspaceDir,
       stdio: 'inherit',
-      timeout: 120000,
+      timeout: 300000,
     });
   }
 
@@ -89,9 +89,10 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   fs.copyFileSync(ocConfigSrc, path.join(ocConfigDest, 'openclaw.json'));
 
   // Resolve the openclaw.yml policy template relative to this package
+  // dist/cli/start.js -> dist/cli -> dist -> cli -> repo root
   const policyPath = path.resolve(
     path.dirname(new URL(import.meta.url).pathname),
-    '..', '..', '..', '..', 'templates', 'openclaw.yml'
+    '..', '..', '..', 'templates', 'openclaw.yml'
   );
 
   if (!fs.existsSync(policyPath)) {

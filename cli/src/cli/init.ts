@@ -166,9 +166,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Copy default policy template if no policy exists
   if (!fs.existsSync(POLICY_PATH)) {
     // Find templates directory relative to this file
+    // dist/cli/init.js -> dist/cli -> dist -> cli -> repo root
     const templatesDir = path.resolve(
       path.dirname(new URL(import.meta.url).pathname),
-      '..', '..', '..', '..', 'templates'
+      '..', '..', '..', 'templates'
     );
     const defaultTemplatePath = path.join(templatesDir, 'default.yml');
 
