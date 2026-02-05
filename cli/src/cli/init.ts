@@ -270,7 +270,6 @@ async function setupOpenClaw(
   const ocConfig: Record<string, unknown> = {
     gateway: {
       mode: 'local',
-      auth: { mode: 'none' },
     },
     channels: {
       telegram: {

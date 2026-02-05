@@ -96,9 +96,22 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   }
 
   // Copy OpenClaw config into workspace (container HOME=/workspace)
+  // Strip gateway.auth before copying — doctor --fix may add auth modes
+  // that the containerised gateway version doesn't recognise.
   const ocConfigDest = path.join(workspaceDir, '.openclaw');
   fs.mkdirSync(ocConfigDest, { recursive: true });
-  fs.copyFileSync(ocConfigSrc, path.join(ocConfigDest, 'openclaw.json'));
+  try {
+    const raw = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8'));
+    if (raw.gateway?.auth) delete raw.gateway.auth;
+    fs.writeFileSync(
+      path.join(ocConfigDest, 'openclaw.json'),
+      JSON.stringify(raw, null, 2) + '\n',
+      'utf-8',
+    );
+  } catch {
+    // Fallback: straight copy
+    fs.copyFileSync(ocConfigSrc, path.join(ocConfigDest, 'openclaw.json'));
+  }
 
   // Resolve the openclaw.yml policy template relative to this package
   // dist/cli/start.js -> dist/cli -> dist -> cli -> repo root
