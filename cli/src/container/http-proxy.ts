@@ -223,7 +223,7 @@ export class HttpProxy {
     clientSocket: net.Socket,
     head: Buffer
   ): void {
-    const serverSocket = net.connect(port, host, () => {
+    const serverSocket = net.connect({ host, port, timeout: 30000 }, () => {
       clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head.length > 0) {
         serverSocket.write(head);
@@ -232,13 +232,27 @@ export class HttpProxy {
       clientSocket.pipe(serverSocket);
     });
 
-    serverSocket.on('error', () => {
-      clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-      clientSocket.end();
+    serverSocket.on('timeout', () => {
+      serverSocket.destroy();
+      if (clientSocket.writable) {
+        clientSocket.write('HTTP/1.1 504 Gateway Timeout\r\n\r\n');
+        clientSocket.end();
+      }
+    });
+
+    serverSocket.on('error', (err) => {
+      if (clientSocket.writable) {
+        clientSocket.write(`HTTP/1.1 502 Bad Gateway\r\n\r\n`);
+        clientSocket.end();
+      }
     });
 
     clientSocket.on('error', () => {
-      serverSocket.end();
+      serverSocket.destroy();
+    });
+
+    clientSocket.on('close', () => {
+      serverSocket.destroy();
     });
   }
 }

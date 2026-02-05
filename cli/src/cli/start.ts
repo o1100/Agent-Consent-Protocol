@@ -42,6 +42,26 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   const home = process.env.HOME || '~';
   const ocConfigSrc = path.join(home, '.openclaw', 'openclaw.json');
 
+  // Stop any existing OpenClaw gateway running on the host.
+  // This can happen if doctor --fix was run previously and enabled a systemd service.
+  try {
+    execSync('systemctl --user stop openclaw-gateway.service 2>/dev/null || true', {
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+    execSync('systemctl --user disable openclaw-gateway.service 2>/dev/null || true', {
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+    // Also kill any stray openclaw gateway processes
+    execSync('pkill -f "openclaw.*gateway" 2>/dev/null || true', {
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+  } catch {
+    // Ignore errors — service may not exist
+  }
+
   // Check for OpenClaw config
   if (!fs.existsSync(ocConfigSrc)) {
     console.error('');
@@ -82,18 +102,6 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
       stdio: 'inherit',
       timeout: 300000,
     });
-  }
-
-  // Run openclaw doctor --fix to finalize config (enables Telegram plugin, etc.)
-  try {
-    console.log('  Running openclaw doctor --fix...');
-    execSync(`node ${ocBin} doctor --fix`, {
-      cwd: workspaceDir,
-      stdio: 'pipe',
-      timeout: 30000,
-    });
-  } catch {
-    // Non-fatal — doctor may fail if gateway isn't running yet
   }
 
   // Copy OpenClaw config into workspace (container HOME=/workspace)
