@@ -217,19 +217,21 @@ export class TelegramChannelStub implements ChannelAdapter {
                 }),
               });
 
-              // Edit the original message to show the result (remove buttons)
+              // Edit the message to replace buttons with a single "result" button
+              // This preserves the original request details while clearly showing the decision
               if (messageId) {
-                const statusText = isApprove
-                  ? '✅ *APPROVED*'
-                  : '❌ *DENIED*';
-                await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+                const resultButton = isApprove
+                  ? { text: '✅ Approved', callback_data: 'acp_noop_approved' }
+                  : { text: '❌ Denied', callback_data: 'acp_noop_denied' };
+                await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     chat_id: this.chatId,
                     message_id: messageId,
-                    text: `🔐 *ACP Consent Request*\n\n${statusText}\n\n_Decision recorded\\._`,
-                    parse_mode: 'Markdown',
+                    reply_markup: {
+                      inline_keyboard: [[resultButton]],
+                    },
                   }),
                 }).catch(() => {});  // Best-effort edit
               }
