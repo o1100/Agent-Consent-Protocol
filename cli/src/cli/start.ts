@@ -83,6 +83,18 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     });
   }
 
+  // Run openclaw doctor --fix to finalize config (enables Telegram plugin, etc.)
+  try {
+    console.log('  Running openclaw doctor --fix...');
+    execSync(`node ${ocBin} doctor --fix`, {
+      cwd: workspaceDir,
+      stdio: 'pipe',
+      timeout: 30000,
+    });
+  } catch {
+    // Non-fatal — doctor may fail if gateway isn't running yet
+  }
+
   // Copy OpenClaw config into workspace (container HOME=/workspace)
   const ocConfigDest = path.join(workspaceDir, '.openclaw');
   fs.mkdirSync(ocConfigDest, { recursive: true });

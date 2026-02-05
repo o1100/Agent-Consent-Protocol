@@ -270,6 +270,7 @@ async function setupOpenClaw(
   const ocConfig: Record<string, unknown> = {
     gateway: {
       mode: 'local',
+      auth: 'none',
     },
     channels: {
       telegram: {
@@ -277,6 +278,11 @@ async function setupOpenClaw(
         botToken: msgBotToken,
         dmPolicy: 'allowlist',
         allowFrom: [chatId],
+      },
+    },
+    plugins: {
+      entries: {
+        telegram: { enabled: true },
       },
     },
   };
