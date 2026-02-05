@@ -137,7 +137,7 @@ if [ -f "$HOME/.acp/config.yml" ]; then
     skip "ACP already configured (~/.acp/config.yml exists)"
     echo "   Run 'acp init --channel=telegram' again to reconfigure."
 else
-    acp init --channel=telegram
+    acp init --channel=telegram </dev/tty
     ok "ACP configured"
 fi
 
@@ -148,7 +148,7 @@ if [ -f "$HOME/.openclaw/openclaw.json" ]; then
     echo "   Starting OpenClaw inside ACP containment..."
     echo "   Press Ctrl+C to stop the gateway when done."
     echo ""
-    docker_run acp start openclaw
+    docker_run acp start openclaw </dev/tty
 else
     echo "   Skipping 'acp start openclaw' — no OpenClaw config found."
     echo "   If you configured the OpenClaw messaging bot during 'acp init',"
