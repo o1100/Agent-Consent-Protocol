@@ -11,12 +11,9 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { stringify as yamlStringify } from 'yaml';
 
-const ACP_DIR = path.join(process.env.HOME || '~', '.acp');
-const CONFIG_PATH = path.join(ACP_DIR, 'config.yml');
-const POLICY_PATH = path.join(ACP_DIR, 'policy.yml');
-
 interface InitOptions {
   channel: string;
+  config?: string;
 }
 
 function prompt(question: string): Promise<string> {
@@ -33,6 +30,10 @@ function prompt(question: string): Promise<string> {
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
+  const ACP_DIR = options.config || path.join(process.env.HOME || '~', '.acp');
+  const CONFIG_PATH = path.join(ACP_DIR, 'config.yml');
+  const POLICY_PATH = path.join(ACP_DIR, 'policy.yml');
+
   console.log('');
   console.log('  ACP v0.3 — Agent Consent Protocol');
   console.log('  2FA for AI Agents');

@@ -27,6 +27,7 @@ program
   .command('init')
   .description('Initialize ACP configuration')
   .option('--channel <type>', 'Approval channel: prompt, telegram, webhook', 'prompt')
+  .option('--config <dir>', 'ACP config directory (default: ~/.acp)')
   .action(initCommand);
 
 // acp contain -- <command>
@@ -43,6 +44,7 @@ program
     (val: string, prev: string[]) => { prev.push(val); return prev; }, [] as string[])
   .option('--consent-port <port>', 'Consent server port (Layer 1)', '8443')
   .option('--http-proxy-port <port>', 'HTTP proxy port (Layer 2)', '8444')
+  .option('--config <dir>', 'ACP config directory (default: ~/.acp)')
   .allowUnknownOption(true)
   .argument('[command...]', 'Agent command to run')
   .action(containCommand);

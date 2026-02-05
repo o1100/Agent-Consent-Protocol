@@ -207,14 +207,19 @@ Designed for [OpenClaw](https://github.com/o1100/OpenClaw) — works with any co
 ## Works With Any Agent
 
 ```bash
-acp contain -- openclaw gateway        # OpenClaw (primary)
-acp contain -- python my_agent.py      # Python
-acp contain -- node agent.js           # Node.js
-acp contain -- ./my-go-agent           # Go
-acp contain -- java -jar agent.jar     # Java
+# OpenClaw (primary) — requires workspace setup, see examples/openclaw/
+acp contain --workspace=./my-workspace \
+  --env=ANTHROPIC_API_KEY \
+  -- node /workspace/node_modules/openclaw/openclaw.mjs gateway
+
+# Python / Node.js / Go / Java — just works
+acp contain -- python my_agent.py
+acp contain -- node agent.js
+acp contain -- ./my-go-agent
+acp contain -- java -jar agent.jar
 ```
 
-OpenClaw is the primary supported agent. ACP wraps any process — no code changes needed.
+OpenClaw is the primary supported agent. See [examples/openclaw/](examples/openclaw/) for the full setup guide. ACP wraps any process — no code changes needed.
 
 ---
 
@@ -241,6 +246,8 @@ node dist/index.js --help
 
 ```
 acp init [--channel=prompt|telegram|webhook]    Setup wizard
+    --config=DIR                                ACP config directory (default: ~/.acp)
+
 acp contain [options] -- CMD                    Run agent in contained Docker sandbox
     --channel=TYPE                              Override consent channel
     --policy=FILE                               Policy file to use
@@ -249,6 +256,9 @@ acp contain [options] -- CMD                    Run agent in contained Docker sa
     --interactive                               Pass stdin to container
     --writable                                  Make container filesystem writable
     --env=KEY                                   Forward host env var (repeatable)
+    --config=DIR                                ACP config directory (default: ~/.acp)
+    --consent-port=PORT                         Consent server port (default: 8443)
+    --http-proxy-port=PORT                      HTTP proxy port (default: 8444)
 ```
 
 ---

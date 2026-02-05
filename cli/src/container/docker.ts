@@ -38,11 +38,11 @@ const NETWORK_SUBNET = '10.200.0.0/24';
 const IMAGE_MAP: Record<string, string> = {
   python: 'python:3.12-slim',
   python3: 'python:3.12-slim',
-  node: 'node:20-slim',
-  npx: 'node:20-slim',
+  node: 'node:22-slim',
+  npx: 'node:22-slim',
   ruby: 'ruby:3.3-slim',
   go: 'golang:1.22-slim',
-  openclaw: 'node:20-slim',
+  openclaw: 'node:22-slim',
 };
 
 const DEFAULT_IMAGE = 'ubuntu:24.04';

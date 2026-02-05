@@ -12,6 +12,7 @@
  */
 
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { parse as yamlParse } from 'yaml';
@@ -24,8 +25,6 @@ import { HttpProxy } from '../container/http-proxy.js';
 import { generateWrappers, cleanupWrappers } from '../container/shell-wrappers.js';
 import * as docker from '../container/docker.js';
 
-const ACP_DIR = path.join(process.env.HOME || '~', '.acp');
-
 interface ContainOptions {
   image?: string;
   workspace?: string;
@@ -36,6 +35,27 @@ interface ContainOptions {
   env: string[];
   consentPort: string;
   httpProxyPort: string;
+  config?: string;
+}
+
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '0.0.0.0');
+  });
+}
+
+async function findAvailablePort(startPort: number): Promise<number> {
+  let port = startPort;
+  while (port < startPort + 100) {
+    if (await isPortAvailable(port)) return port;
+    port++;
+  }
+  throw new Error(`No available port found in range ${startPort}-${startPort + 99}`);
 }
 
 export async function containCommand(
@@ -46,6 +66,8 @@ export async function containCommand(
     console.error('  No command specified. Usage: acp contain -- <command>');
     process.exit(1);
   }
+
+  const ACP_DIR = options.config || path.join(process.env.HOME || '~', '.acp');
 
   // Load config
   const configPath = path.join(ACP_DIR, 'config.yml');
@@ -66,9 +88,20 @@ export async function containCommand(
     process.exit(1);
   }
 
-  // Load policy
-  const consentPort = parseInt(options.consentPort, 10);
-  const httpProxyPort = parseInt(options.httpProxyPort, 10);
+  // Load policy — resolve ports (auto-detect if defaults are taken)
+  let consentPort = parseInt(options.consentPort, 10);
+  let httpProxyPort = parseInt(options.httpProxyPort, 10);
+
+  if (!(await isPortAvailable(consentPort))) {
+    const origPort = consentPort;
+    consentPort = await findAvailablePort(consentPort + 1);
+    console.log(`  Port ${origPort} in use — consent server will use ${consentPort}`);
+  }
+  if (!(await isPortAvailable(httpProxyPort))) {
+    const origPort = httpProxyPort;
+    httpProxyPort = await findAvailablePort(httpProxyPort + 1);
+    console.log(`  Port ${origPort} in use — HTTP proxy will use ${httpProxyPort}`);
+  }
 
   let policy: Policy;
   const policyPath = options.policy || (config.defaults as Record<string, string>)?.policy || path.join(ACP_DIR, 'policy.yml');
