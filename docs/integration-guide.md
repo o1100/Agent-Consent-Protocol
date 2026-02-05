@@ -12,30 +12,6 @@ acp contain -- openclaw gateway
 
 OpenClaw's shell commands and HTTP requests will be intercepted by ACP. No code changes needed.
 
-## LangChain (Python)
-
-```bash
-acp contain -- python langchain_agent.py
-```
-
-All outbound HTTP requests from your LangChain agent are routed through ACP's HTTP proxy automatically. Shell commands are intercepted via shell wrappers.
-
-## AutoGen
-
-```bash
-acp contain -- python autogen_script.py
-```
-
-AutoGen agents run inside the ACP container with all traffic routed through the consent gate.
-
-## CrewAI
-
-```bash
-acp contain -- python crew.py
-```
-
-Same approach — ACP wraps the process, intercepts shell commands and HTTP requests.
-
 ## Custom Agents (Any Language)
 
 ACP works with any agent that runs as a command:
@@ -84,7 +60,7 @@ ACP injects these into the agent process:
 | `ACP_CONSENT_URL` | `http://<host>:8443` | Shell wrapper callback URL |
 | `ACP_SANDBOX` | `1` | Indicates running inside ACP |
 | `ACP_CONTAINED` | `1` | Set when running in Docker contained mode |
-| `ACP_VERSION` | `1.0.0` | ACP version |
+| `ACP_VERSION` | `0.3.0` | ACP version |
 
 ## Container Security
 

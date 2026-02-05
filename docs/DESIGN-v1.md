@@ -2,10 +2,10 @@
 
 ## The Problem
 
-AI agents (Claude Code, OpenClaw, etc.) need to take actions on your behalf — HTTP requests, API calls, file operations. Current solutions have two gaps:
+AI agents (OpenClaw, etc.) need to take actions on your behalf — HTTP requests, API calls, file operations. Current solutions have two gaps:
 
 1. **Static policies** — Docker Sandboxes has allow/deny lists, but no human-in-the-loop
-2. **Permission fatigue** — Claude Code asks for every action, breaking flow
+2. **Permission fatigue** — Agents ask for every action, breaking flow
 
 **The 2FA insight:** Just like authentication needs a second factor (your phone), agent actions need a second factor — human approval via push notification for sensitive operations.
 
@@ -235,7 +235,7 @@ If no response within timeout (default 120s), auto-deny and update the message.
 
 ### Phase 4: Documentation
 1. README with Docker Sandboxes integration guide
-2. Policy examples for common agents (OpenClaw, Claude Code)
+2. Policy examples for agents (OpenClaw)
 
 ## Verification
 

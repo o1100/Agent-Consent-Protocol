@@ -27,7 +27,7 @@
 
 AI agents can send emails, run shell commands, transfer money, and deploy to production — but there's no universal way to ensure a human said "yes" first.
 
-Every framework has its own half-baked human-in-the-loop: LangGraph interrupts, CrewAI's `human_input` flag, AutoGen's `HumanProxyAgent`. They're all:
+Every framework has its own half-baked human-in-the-loop. They're all:
 
 - **Framework-specific** — only works in that one ecosystem
 - **Software-level** — runs inside the agent's process, so the agent can bypass it
@@ -187,32 +187,34 @@ Docker Desktop offers [microVM-based sandboxes](https://docs.docker.com/ai/sandb
 
 ---
 
-## Comparison
+## ACP Features
 
-| Feature | ACP (v0.3) | LangGraph | CrewAI |
-|---|:---:|:---:|:---:|
-| Works with any agent/language | Yes | No | No |
-| Network-level enforcement | Yes (Docker) | No | No |
-| Shell command interception | Yes | No | No |
-| HTTP request interception | Yes | No | No |
-| Mobile approval (Telegram) | Yes | No | No |
-| Zero code changes to agent | Yes | No | No |
-| Agent can bypass | No (container) | Yes | Yes |
-| Audit trail | Yes | No | No |
+| Feature | ACP (v0.3) |
+|---|:---:|
+| Works with any agent/language | Yes |
+| Network-level enforcement (Docker) | Yes |
+| Shell command interception | Yes |
+| HTTP request interception | Yes |
+| Mobile approval (Telegram) | Yes |
+| Zero code changes to agent | Yes |
+| Agent can't bypass (container) | Yes |
+| Audit trail | Yes |
+
+Designed for [OpenClaw](https://github.com/o1100/OpenClaw) — works with any command.
 
 ---
 
-## Works With Everything
+## Works With Any Agent
 
 ```bash
-acp contain -- openclaw gateway        # OpenClaw
+acp contain -- openclaw gateway        # OpenClaw (primary)
 acp contain -- python my_agent.py      # Python
 acp contain -- node agent.js           # Node.js
 acp contain -- ./my-go-agent           # Go
 acp contain -- java -jar agent.jar     # Java
 ```
 
-ACP wraps any process. No code changes needed.
+OpenClaw is the primary supported agent. ACP wraps any process — no code changes needed.
 
 ---
 
@@ -245,6 +247,7 @@ acp contain [options] -- CMD                    Run agent in contained Docker sa
     --image=IMAGE                               Custom Docker image
     --workspace=PATH                            Mount workspace directory
     --interactive                               Pass stdin to container
+    --writable                                  Make container filesystem writable
     --env=KEY                                   Forward host env var (repeatable)
 ```
 
@@ -277,6 +280,7 @@ npm test    # 47 tests
 - [Network Isolation](docs/network-isolation.md)
 - [Policy Reference](docs/policy-reference.md)
 - [Integration Guide](docs/integration-guide.md)
+- [Design Document](docs/DESIGN-v1.md)
 - [Protocol Spec](SPEC.md)
 - [Security Policy](SECURITY.md)
 - [Threat Model](THREAT-MODEL.md)
