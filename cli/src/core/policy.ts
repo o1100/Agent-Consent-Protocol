@@ -39,6 +39,11 @@ export class Policy {
     return this.config.default;
   }
 
+  /** Prepend a rule so it's evaluated first. */
+  prependRule(rule: PolicyRule): void {
+    this.config.rules.unshift(rule);
+  }
+
   evaluate(action: Action): PolicyResult {
     for (let i = 0; i < this.config.rules.length; i++) {
       const rule = this.config.rules[i];

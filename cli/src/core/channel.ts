@@ -6,6 +6,7 @@
  * Secondary: WebhookChannel (HTTP callback)
  */
 
+import path from 'node:path';
 import type { Action } from './types.js';
 
 export interface ChannelResponse {
@@ -193,7 +194,15 @@ function formatAction(action: Action): string {
   const lines = ['*ACP Consent Request*', ''];
 
   if (action.meta.kind === 'shell') {
-    lines.push(`*Command:* \`${action.name}\``);
+    // For runtime wrappers, extract the script basename as the display name
+    let displayName = action.name;
+    if (['node', 'python', 'python3'].includes(action.name) && action.args) {
+      const match = action.args.match(/^(?:node|python3?)\s+(\S+)/);
+      if (match) {
+        displayName = path.basename(match[1]);
+      }
+    }
+    lines.push(`*Command:* \`${displayName}\``);
     if (action.args) {
       // Truncate long args for readability
       const display = action.args.length > 200

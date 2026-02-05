@@ -16,17 +16,49 @@ interface InitOptions {
   config?: string;
 }
 
-function prompt(question: string): Promise<string> {
+function createPrompt(): { ask: (question: string) => Promise<string>; close: () => void } {
+  const isTTY = process.stdin.isTTY;
+  let lines: string[] | null = null;
+  let lineIndex = 0;
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
+    terminal: isTTY ?? false,
   });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
+
+  // For piped input, pre-read all lines to avoid race conditions
+  const linesReady = isTTY
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        const collected: string[] = [];
+        rl.on('line', (line) => collected.push(line));
+        rl.on('close', () => {
+          lines = collected;
+          resolve();
+        });
+      });
+
+  return {
+    async ask(question: string): Promise<string> {
+      if (isTTY) {
+        return new Promise((resolve) => {
+          rl.question(question, (answer) => {
+            resolve(answer.trim());
+          });
+        });
+      }
+      // Piped: read from pre-buffered lines
+      await linesReady;
+      process.stdout.write(question);
+      const answer = lines?.[lineIndex++] ?? '';
+      process.stdout.write(answer + '\n');
+      return answer.trim();
+    },
+    close() {
+      if (isTTY) rl.close();
+    },
+  };
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
@@ -49,18 +81,22 @@ export async function initCommand(options: InitOptions): Promise<void> {
     channel: options.channel,
   };
 
+  const prompt = createPrompt();
+
   if (options.channel === 'telegram') {
     console.log('  Telegram Setup');
     console.log('  1. Create a bot via @BotFather and get the token');
-    console.log('  2. Send a message to the bot');
-    console.log('  3. Get your chat ID from:');
+    console.log('  2. Open Telegram and search for your bot by username');
+    console.log('  3. Send any message to the bot (e.g. "hi")');
+    console.log('  4. Get your chat ID from:');
     console.log('     https://api.telegram.org/bot<TOKEN>/getUpdates');
     console.log('');
 
-    const botToken = await prompt('  Telegram Bot Token: ');
-    const chatId = await prompt('  Telegram Chat ID: ');
+    const botToken = await prompt.ask('  Telegram Bot Token: ');
+    const chatId = await prompt.ask('  Telegram Chat ID: ');
 
     if (!botToken || !chatId) {
+      prompt.close();
       console.error('  Bot token and chat ID are required for Telegram.');
       process.exit(1);
     }
@@ -72,8 +108,8 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log('  Telegram configured');
     console.log('');
   } else if (options.channel === 'webhook') {
-    const url = await prompt('  Webhook URL: ');
-    const secret = await prompt('  Webhook Secret (optional): ');
+    const url = await prompt.ask('  Webhook URL: ');
+    const secret = await prompt.ask('  Webhook Secret (optional): ');
 
     config.webhook = {
       url,
@@ -86,6 +122,8 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log('  Note: --contained mode requires Telegram or webhook.');
     console.log('');
   }
+
+  prompt.close();
 
   // Write config
   fs.writeFileSync(CONFIG_PATH, yamlStringify(config), 'utf-8');
@@ -116,11 +154,19 @@ export async function initCommand(options: InitOptions): Promise<void> {
         '  - rm',
         '  - rmdir',
         '  - python',
+        '  - python3',
         '  - node',
         '  - pip',
         '  - npm',
+        '  - npx',
         '',
         'rules:',
+        '  - match: { name: "node" }',
+        '    action: allow',
+        '  - match: { name: "python" }',
+        '    action: allow',
+        '  - match: { name: "python3" }',
+        '    action: allow',
         '  - match: { name: "cat" }',
         '    action: allow',
         '  - match: { name: "ls" }',

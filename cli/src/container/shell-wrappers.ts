@@ -87,7 +87,7 @@ const req = http.request({
     'Content-Type': 'application/json',
     'Content-Length': Buffer.byteLength(payload),
   },
-  timeout: 30000,
+  timeout: 130000,
 }, (res) => {
   let body = '';
   res.on('data', (chunk) => { body += chunk; });
@@ -148,7 +148,15 @@ fi
 export ACP_WRAPPER_ACTIVE=1
 
 ACP_GATE_DIR="$(dirname "$0")"
-FULL_CMD="${cmd} $*"
+
+# For runtime wrappers (node, python, python3), use the script basename as display name
+DISPLAY_NAME="${cmd}"
+if [ "${cmd}" = "node" ] || [ "${cmd}" = "python" ] || [ "${cmd}" = "python3" ]; then
+  if [ -n "\${1:-}" ] && [ "\${1:0:1}" != "-" ]; then
+    DISPLAY_NAME="$(basename "$1")"
+  fi
+fi
+FULL_CMD="\${DISPLAY_NAME} $*"
 
 # Find real node binary (skip wrapper directory)
 REAL_NODE=$(PATH="\${PATH#/usr/local/bin/acp-wrappers:}" command -v node 2>/dev/null || echo "node")
@@ -161,7 +169,7 @@ if [ -z "$REAL_CMD" ]; then
 fi
 
 # Ask consent server for permission
-if "$REAL_NODE" "$ACP_GATE_DIR/acp-gate.mjs" "${cmd}" "$FULL_CMD"; then
+if "$REAL_NODE" "$ACP_GATE_DIR/acp-gate.mjs" "$DISPLAY_NAME" "$FULL_CMD"; then
   unset ACP_WRAPPER_ACTIVE
   exec "$REAL_CMD" "$@"
 else

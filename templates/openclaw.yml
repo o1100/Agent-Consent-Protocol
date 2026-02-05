@@ -19,6 +19,7 @@ wrap:
   - node
   - pip
   - npm
+  - npx
 
 rules:
   # --- ALLOW: Telegram (required for bot operation) ---
@@ -39,6 +40,14 @@ rules:
   - match: { kind: http, host: "api.github.com" }
     action: allow
   - match: { kind: http, host: "api.search.brave.com" }
+    action: allow
+
+  # --- ALLOW: agent runtimes (the agent itself runs through these) ---
+  - match: { name: "node" }
+    action: allow
+  - match: { name: "python" }
+    action: allow
+  - match: { name: "python3" }
     action: allow
 
   # --- ALLOW: safe read operations ---

@@ -108,8 +108,29 @@ export async function containCommand(
   if (fs.existsSync(policyPath)) {
     policy = loadPolicy(policyPath);
   } else {
-    console.warn('  No policy file found. Using default: ask for everything.');
+    console.warn('  No policy file found. Using sensible defaults.');
     policy = parsePolicy('default: ask\nwrap: []\nrules: []');
+  }
+
+  // Built-in allowlist: known-safe API domains that bots routinely call.
+  // These are prepended so an explicit policy file can still override them.
+  const safeHosts = [
+    // LLM providers
+    'api.anthropic.com',
+    '*.anthropic.com',
+    'api.openai.com',
+    '*.openai.com',
+    'generativelanguage.googleapis.com',
+    // Search APIs
+    'api.search.brave.com',
+    // Channel APIs
+    ...(channelType === 'telegram' ? ['api.telegram.org'] : []),
+  ];
+  for (const host of safeHosts) {
+    policy.prependRule({
+      match: { kind: 'http', host },
+      action: 'allow',
+    });
   }
 
   // Create channel

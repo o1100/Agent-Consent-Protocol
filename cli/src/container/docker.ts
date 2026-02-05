@@ -235,7 +235,9 @@ export function runContained(options: DockerContainerOptions): ChildProcess {
       const pathVar = envVars.find(e => e.startsWith('PATH='));
       if (pathVar) containerPath = pathVar.substring(5);
     } catch { /* use default */ }
-    args.push('-e', `PATH=/usr/local/bin/acp-wrappers:${containerPath}`);
+    // Also add workspace npm bins so host-installed binaries are available
+    const workspaceBins = '/workspace/.npm-global/bin:/workspace/node_modules/.bin';
+    args.push('-e', `PATH=/usr/local/bin/acp-wrappers:${workspaceBins}:${containerPath}`);
   }
 
   // Custom environment variables

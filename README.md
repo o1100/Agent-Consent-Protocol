@@ -223,21 +223,27 @@ OpenClaw is the primary supported agent. See [examples/openclaw/](examples/openc
 
 ---
 
+## Prerequisites
+
+- **Node.js >= 22** — [install via NodeSource](https://github.com/nodesource/distributions) or `nvm`
+- **Docker** — [install Docker Engine](https://docs.docker.com/engine/install/) (Linux) or Docker Desktop (macOS/Windows)
+- **At least 512MB RAM** — Docker image pulls and npm installs can OOM on very small VMs. Add swap if running on a constrained machine.
+
 ## Install
 
 ```bash
-# npm
+# npm (recommended)
 npm install -g agent-2fa
 
 # Or run directly
 npx agent-2fa init
 npx agent-2fa contain -- python my_agent.py
 
-# Or from source
+# Or from source (e.g. to test a branch)
 git clone https://github.com/o1100/Agent-Consent-Protocol.git
 cd Agent-Consent-Protocol/cli
-npm install && npm run build
-node dist/index.js --help
+npm install && npm run build && npm link
+acp --help
 ```
 
 ---
