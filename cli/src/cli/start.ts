@@ -104,6 +104,17 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     });
   }
 
+  // Ensure global-agent is installed so Node honors HTTP(S)_PROXY inside containment
+  const globalAgentDir = path.join(workspaceDir, 'node_modules', 'global-agent');
+  if (!fs.existsSync(globalAgentDir)) {
+    console.log('  Installing global-agent (proxy support)...');
+    execSync('npm install global-agent', {
+      cwd: workspaceDir,
+      stdio: 'inherit',
+      timeout: 300000,
+    });
+  }
+
   // Copy OpenClaw config into workspace (container HOME=/workspace)
   // Ensure gateway.auth has a valid token — OpenClaw requires one.
   const ocConfigDest = path.join(workspaceDir, '.openclaw');
@@ -145,13 +156,20 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     policy: policyPath,
     interactive: false,
     writable: true,
-    env: [],
+    env: ['NODE_OPTIONS'],
     consentPort: '8443',
     httpProxyPort: '8444',
     config: options.config,
   };
 
   const command = ['node', 'node_modules/.bin/openclaw', 'gateway'];
+
+  // Force Node to load global-agent so HTTP(S) respects the proxy in containment.
+  const existingNodeOptions = process.env.NODE_OPTIONS || '';
+  if (!existingNodeOptions.includes('global-agent/bootstrap')) {
+    const prefix = existingNodeOptions ? `${existingNodeOptions} ` : '';
+    process.env.NODE_OPTIONS = `${prefix}--require global-agent/bootstrap`;
+  }
 
   await containCommand(command, containOpts);
 }

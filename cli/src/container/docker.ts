@@ -208,12 +208,15 @@ export function runContained(options: DockerContainerOptions): ChildProcess {
     `--memory=${memoryLimit}`,
     '-v', `${workspaceDir}:/workspace`,
     '-w', '/workspace',
-    // Proxy environment
-    '-e', `HTTP_PROXY=${httpProxyUrl}`,
-    '-e', `HTTPS_PROXY=${httpProxyUrl}`,
-    '-e', `http_proxy=${httpProxyUrl}`,
-    '-e', `https_proxy=${httpProxyUrl}`,
-    '-e', `NO_PROXY=${proxyHost}`,
+  // Proxy environment
+  '-e', `HTTP_PROXY=${httpProxyUrl}`,
+  '-e', `HTTPS_PROXY=${httpProxyUrl}`,
+  '-e', `http_proxy=${httpProxyUrl}`,
+  '-e', `https_proxy=${httpProxyUrl}`,
+  // Proxy for Node libraries that honor global-agent
+  '-e', `GLOBAL_AGENT_HTTP_PROXY=${httpProxyUrl}`,
+  '-e', `GLOBAL_AGENT_HTTPS_PROXY=${httpProxyUrl}`,
+  '-e', `NO_PROXY=${proxyHost}`,
     '-e', `ACP_CONSENT_URL=http://${proxyHost}:${consentPort}`,
     '-e', 'ACP_SANDBOX=1',
     '-e', 'ACP_CONTAINED=1',
