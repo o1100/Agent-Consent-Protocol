@@ -119,8 +119,10 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
 
   // Copy OpenClaw config into workspace (container HOME=/workspace)
   // Ensure gateway.auth has a valid token — OpenClaw requires one.
+  // Also forward env keys from the OpenClaw config into the container.
   const ocConfigDest = path.join(workspaceDir, '.openclaw');
   fs.mkdirSync(ocConfigDest, { recursive: true });
+  const forwardEnvKeys: string[] = [];
   try {
     const raw = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8'));
     if (!raw.gateway) raw.gateway = {};
@@ -128,6 +130,14 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
       mode: 'token',
       token: crypto.randomBytes(32).toString('hex'),
     };
+    if (raw.env && typeof raw.env === 'object') {
+      for (const [key, value] of Object.entries(raw.env as Record<string, unknown>)) {
+        if (typeof value === 'string' && value.length > 0) {
+          process.env[key] = value;
+          forwardEnvKeys.push(key);
+        }
+      }
+    }
     fs.writeFileSync(
       path.join(ocConfigDest, 'openclaw.json'),
       JSON.stringify(raw, null, 2) + '\n',
@@ -175,7 +185,7 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     policy: policyPath,
     interactive: false,
     writable: true,
-    env: ['NODE_OPTIONS'],
+    env: ['NODE_OPTIONS', ...forwardEnvKeys],
     consentPort: '8443',
     httpProxyPort: '8444',
     config: options.config,
