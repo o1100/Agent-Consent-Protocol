@@ -180,7 +180,8 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
 
   // Delegate to containCommand with the right options
   const containOpts: ContainOptions = {
-    image: 'node:22-slim',
+    // Use Node 20 for OpenClaw to avoid long-polling issues on Node 22+.
+    image: 'node:20-slim',
     workspace: workspaceDir,
     policy: policyPath,
     interactive: false,

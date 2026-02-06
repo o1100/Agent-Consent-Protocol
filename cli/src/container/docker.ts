@@ -42,7 +42,8 @@ const IMAGE_MAP: Record<string, string> = {
   npx: 'node:22-slim',
   ruby: 'ruby:3.3-slim',
   go: 'golang:1.22-slim',
-  openclaw: 'node:22-slim',
+  // OpenClaw long-polling can fail on Node 22+ with proxies; use Node 20 by default.
+  openclaw: 'node:20-slim',
 };
 
 const DEFAULT_IMAGE = 'ubuntu:24.04';
