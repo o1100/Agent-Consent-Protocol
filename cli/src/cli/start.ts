@@ -138,6 +138,23 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     fs.copyFileSync(ocConfigSrc, path.join(ocConfigDest, 'openclaw.json'));
   }
 
+  // Create a proxy bootstrap for undici/fetch inside the container.
+  // Node's global fetch does not honor HTTP(S)_PROXY by default.
+  const proxyBootstrapPath = path.join(ocConfigDest, 'acp-proxy-bootstrap.cjs');
+  const proxyBootstrap = [
+    "try {",
+    "  const { ProxyAgent, setGlobalDispatcher } = require('undici');",
+    "  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;",
+    "  if (proxy) {",
+    "    setGlobalDispatcher(new ProxyAgent(proxy));",
+    "  }",
+    "} catch (err) {",
+    "  // Best effort: if undici isn't available, ignore.",
+    "}",
+    "",
+  ].join('\n');
+  fs.writeFileSync(proxyBootstrapPath, proxyBootstrap, 'utf-8');
+
   // Resolve the openclaw.yml policy template relative to this package
   // dist/cli/start.js -> dist/cli -> dist -> cli -> repo root
   const policyPath = path.resolve(
@@ -168,9 +185,14 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
 
   // Force Node to load global-agent so HTTP(S) respects the proxy in containment.
   const existingNodeOptions = process.env.NODE_OPTIONS || '';
-  if (!existingNodeOptions.includes('global-agent/bootstrap')) {
+  const requires = [
+    'global-agent/bootstrap',
+    '/workspace/.openclaw/acp-proxy-bootstrap.cjs',
+  ];
+  const missing = requires.filter(r => !existingNodeOptions.includes(r));
+  if (missing.length > 0) {
     const prefix = existingNodeOptions ? `${existingNodeOptions} ` : '';
-    process.env.NODE_OPTIONS = `${prefix}--require global-agent/bootstrap`;
+    process.env.NODE_OPTIONS = `${prefix}${missing.map(r => `--require ${r}`).join(' ')}`;
   }
 
   await containCommand(command, containOpts);
