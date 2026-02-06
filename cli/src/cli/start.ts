@@ -104,11 +104,13 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     });
   }
 
-  // Ensure global-agent is installed so Node honors HTTP(S)_PROXY inside containment
+  // Ensure global-agent is installed so Node honors HTTP(S)_PROXY inside containment.
+  // Pin to a version that ships prebuilt dist/ to avoid runtime require errors.
   const globalAgentDir = path.join(workspaceDir, 'node_modules', 'global-agent');
-  if (!fs.existsSync(globalAgentDir)) {
-    console.log('  Installing global-agent (proxy support)...');
-    execSync('npm install global-agent', {
+  const globalAgentDist = path.join(globalAgentDir, 'dist');
+  if (!fs.existsSync(globalAgentDir) || !fs.existsSync(globalAgentDist)) {
+    console.log('  Installing global-agent@2.2.0 (proxy support)...');
+    execSync('npm install global-agent@2.2.0', {
       cwd: workspaceDir,
       stdio: 'inherit',
       timeout: 300000,
