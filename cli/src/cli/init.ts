@@ -263,6 +263,19 @@ async function setupOpenClaw(
     console.error('  Warning: Could not verify bot token.');
   }
 
+  console.log('');
+  console.log('  Important: Do NOT call getUpdates on the messaging bot.');
+  console.log('  That will consume messages and OpenClaw will not see them.');
+  console.log('  (getUpdates is only for the consent bot to fetch your chat ID.)');
+  console.log('');
+
+  // Clear any pending updates (e.g. if getUpdates was used previously)
+  try {
+    await fetch(`https://api.telegram.org/bot${msgBotToken}/deleteWebhook?drop_pending_updates=true`);
+  } catch {
+    // Non-fatal
+  }
+
   const anthropicKey = await prompt.ask('  Anthropic API Key (ANTHROPIC_API_KEY): ');
   const braveKey = await prompt.ask('  Brave Search API Key (optional, press Enter to skip): ');
 
