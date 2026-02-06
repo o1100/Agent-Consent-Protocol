@@ -180,8 +180,7 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
 
   // Delegate to containCommand with the right options
   const containOpts: ContainOptions = {
-    // Use Node 20 for OpenClaw to avoid long-polling issues on Node 22+.
-    image: 'node:20-slim',
+    image: 'node:22-slim',
     workspace: workspaceDir,
     policy: policyPath,
     interactive: false,
@@ -204,6 +203,11 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   if (missing.length > 0) {
     const prefix = existingNodeOptions ? `${existingNodeOptions} ` : '';
     process.env.NODE_OPTIONS = `${prefix}${missing.map(r => `--require ${r}`).join(' ')}`;
+  }
+
+  // Prefer IPv4 to avoid Telegram polling issues on IPv6-only paths.
+  if (!process.env.NODE_OPTIONS?.includes('--dns-result-order=ipv4first')) {
+    process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --dns-result-order=ipv4first`.trim();
   }
 
   await containCommand(command, containOpts);
