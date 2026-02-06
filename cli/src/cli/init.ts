@@ -282,7 +282,7 @@ async function setupOpenClaw(
     console.log('  Detected Claude Code token → saving as ANTHROPIC_OAUTH_TOKEN');
   }
 
-  // Best-effort validation for API keys (oauth tokens may not validate here)
+  // Best-effort validation for API keys (oauth tokens use different endpoints)
   if (anthropicToken && !isClaudeCodeToken) {
     try {
       const res = await fetch('https://api.anthropic.com/v1/models', {
@@ -297,6 +297,31 @@ async function setupOpenClaw(
       }
     } catch {
       console.error('  Warning: Could not verify Anthropic API key.');
+    }
+  }
+
+  // Best-effort validation for Claude Code tokens (OAuth)
+  if (anthropicToken && isClaudeCodeToken) {
+    try {
+      const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
+        headers: {
+          Authorization: `Bearer ${anthropicToken}`,
+          'User-Agent': 'openclaw',
+          Accept: 'application/json',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'oauth-2025-04-20',
+        },
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error(`  Warning: Claude Code token test failed (${res.status}).`);
+        if (text.includes('scope requirement')) {
+          console.error('  This token is missing required scopes (e.g. user:profile).');
+        }
+        console.error('  OpenClaw may not reply without a valid OAuth token.');
+      }
+    } catch {
+      console.error('  Warning: Could not verify Claude Code token.');
     }
   }
   const braveKey = await prompt.ask('  Brave Search API Key (optional, press Enter to skip): ');
