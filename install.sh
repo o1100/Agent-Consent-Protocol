@@ -12,7 +12,7 @@ ok()     { printf '   \033[32m✓ %s\033[0m\n' "$1"; }
 skip()   { printf '   \033[33m⏭ %s (already done)\033[0m\n' "$1"; }
 
 REPO_URL="https://github.com/o1100/Agent-Consent-Protocol.git"
-REPO_BRANCH="v0.3.0"
+REPO_TAG="v0.3.0"
 INSTALL_DIR="$HOME/Agent-Consent-Protocol"
 
 # ── 1. Node.js 22 ────────────────────────────────────────────────────────────
@@ -104,11 +104,18 @@ elif [ -f "$INSTALL_DIR/cli/package.json" ]; then
     REPO_DIR="$INSTALL_DIR"
     skip "ACP repo already cloned at $REPO_DIR"
 else
-    echo "   Cloning ACP $REPO_BRANCH..."
-    git clone --branch "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    echo "   Cloning ACP $REPO_TAG..."
+    git clone "$REPO_URL" "$INSTALL_DIR"
     REPO_DIR="$INSTALL_DIR"
     ok "Cloned to $REPO_DIR"
 fi
+
+# Always prefer the tag explicitly (avoid ambiguity with same-named branches)
+(
+  cd "$REPO_DIR"
+  git fetch --tags --force >/dev/null 2>&1 || true
+  git checkout -f "tags/$REPO_TAG" >/dev/null 2>&1 || true
+)
 
 # Build & link
 if command -v acp &>/dev/null && [ "$(acp --version 2>/dev/null)" = "0.3.0" ]; then
