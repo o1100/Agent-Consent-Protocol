@@ -13,6 +13,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { containCommand, type ContainOptions } from './contain.js';
+import { getGatewayIp } from '../container/docker.js';
 
 interface StartOptions {
   workspace?: string;
@@ -130,6 +131,11 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
       mode: 'token',
       token: crypto.randomBytes(32).toString('hex'),
     };
+    // Ensure Telegram uses the ACP proxy directly (more reliable than global fetch).
+    const proxyUrl = `http://${getGatewayIp()}:8444`;
+    if (raw.channels?.telegram && !raw.channels.telegram.proxy) {
+      raw.channels.telegram.proxy = proxyUrl;
+    }
     if (raw.env && typeof raw.env === 'object') {
       for (const [key, value] of Object.entries(raw.env as Record<string, unknown>)) {
         if (typeof value === 'string' && value.length > 0) {
