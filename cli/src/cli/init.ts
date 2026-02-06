@@ -277,6 +277,22 @@ async function setupOpenClaw(
   }
 
   const anthropicKey = await prompt.ask('  Anthropic API Key (ANTHROPIC_API_KEY): ');
+  if (anthropicKey) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+        },
+      });
+      if (!res.ok) {
+        console.error(`  Warning: Anthropic key test failed (${res.status}).`);
+        console.error('  OpenClaw will not reply without a valid key.');
+      }
+    } catch {
+      console.error('  Warning: Could not verify Anthropic API key.');
+    }
+  }
   const braveKey = await prompt.ask('  Brave Search API Key (optional, press Enter to skip): ');
 
   // Build the OpenClaw config with correct schema
