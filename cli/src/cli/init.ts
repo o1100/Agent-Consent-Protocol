@@ -276,12 +276,18 @@ async function setupOpenClaw(
     // Non-fatal
   }
 
-  const anthropicKey = await prompt.ask('  Anthropic API Key (ANTHROPIC_API_KEY): ');
-  if (anthropicKey) {
+  const anthropicToken = await prompt.ask('  Anthropic API key or Claude Code token: ');
+  const isClaudeCodeToken = anthropicToken ? anthropicToken.startsWith('sk-ant-oat01-') : false;
+  if (anthropicToken && isClaudeCodeToken) {
+    console.log('  Detected Claude Code token → saving as ANTHROPIC_OAUTH_TOKEN');
+  }
+
+  // Best-effort validation for API keys (oauth tokens may not validate here)
+  if (anthropicToken && !isClaudeCodeToken) {
     try {
       const res = await fetch('https://api.anthropic.com/v1/models', {
         headers: {
-          'x-api-key': anthropicKey,
+          'x-api-key': anthropicToken,
           'anthropic-version': '2023-06-01',
         },
       });
@@ -317,7 +323,13 @@ async function setupOpenClaw(
 
   // API keys go in the env section (loaded as process env by OpenClaw)
   const env: Record<string, string> = {};
-  if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
+  if (anthropicToken) {
+    if (isClaudeCodeToken) {
+      env.ANTHROPIC_OAUTH_TOKEN = anthropicToken;
+    } else {
+      env.ANTHROPIC_API_KEY = anthropicToken;
+    }
+  }
   if (braveKey) env.BRAVE_API_KEY = braveKey;
   if (Object.keys(env).length > 0) {
     ocConfig.env = env;
