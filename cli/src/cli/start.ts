@@ -42,6 +42,7 @@ export async function startCommand(
 async function startOpenClaw(options: StartOptions): Promise<void> {
   const home = process.env.HOME || '~';
   const ocConfigSrc = path.join(home, '.openclaw', 'openclaw.json');
+  const setupTokenPath = path.join(home, '.openclaw', '.acp-setup-token');
 
   // Stop any existing OpenClaw gateway running on the host.
   // This can happen if doctor --fix was run previously and enabled a systemd service.
@@ -127,6 +128,7 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   let setupToken: string | null = null;
   try {
     const raw = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8'));
+    let configDirty = false;
     if (!raw.gateway) raw.gateway = {};
     raw.gateway.auth = {
       mode: 'token',
@@ -145,20 +147,29 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
         }
       }
     }
-    if (raw.acp && typeof raw.acp === 'object') {
-      const acp = raw.acp as Record<string, unknown>;
-      if (typeof acp.anthropicSetupToken === 'string' && acp.anthropicSetupToken.length > 0) {
-        setupToken = acp.anthropicSetupToken;
-      }
+    if (raw.acp) {
+      delete raw.acp;
+      configDirty = true;
     }
     fs.writeFileSync(
       path.join(ocConfigDest, 'openclaw.json'),
       JSON.stringify(raw, null, 2) + '\n',
       'utf-8',
     );
+    if (configDirty) {
+      fs.writeFileSync(ocConfigSrc, JSON.stringify(raw, null, 2) + '\n', 'utf-8');
+    }
   } catch {
     // Fallback: straight copy
     fs.copyFileSync(ocConfigSrc, path.join(ocConfigDest, 'openclaw.json'));
+  }
+
+  if (!setupToken && fs.existsSync(setupTokenPath)) {
+    try {
+      setupToken = fs.readFileSync(setupTokenPath, 'utf-8').trim();
+    } catch {
+      // Ignore; will warn below if needed
+    }
   }
 
   // Create a proxy bootstrap for undici/fetch inside the container.

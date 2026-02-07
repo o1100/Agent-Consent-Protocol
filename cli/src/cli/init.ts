@@ -377,14 +377,19 @@ async function setupOpenClaw(
   } else if (anthropicToken && tokenMode === 'api') {
     env.ANTHROPIC_API_KEY = anthropicToken;
   }
-  if (anthropicToken && tokenMode === 'setup') {
-    ocConfig.acp = {
-      anthropicSetupToken: anthropicToken,
-    };
-  }
   if (braveKey) env.BRAVE_API_KEY = braveKey;
   if (Object.keys(env).length > 0) {
     ocConfig.env = env;
+  }
+
+  // Store setup-token separately so we don't put unknown keys in openclaw.json
+  if (anthropicToken && tokenMode === 'setup') {
+    try {
+      const setupTokenPath = path.join(OC_DIR, '.acp-setup-token');
+      fs.writeFileSync(setupTokenPath, anthropicToken + '\n', { mode: 0o600 });
+    } catch {
+      console.error('  Warning: Failed to save setup-token file for OpenClaw.');
+    }
   }
 
   // Write config
