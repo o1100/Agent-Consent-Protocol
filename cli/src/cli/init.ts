@@ -276,16 +276,20 @@ async function setupOpenClaw(
     // Non-fatal
   }
 
-  const anthropicToken = await prompt.ask('  Anthropic API key or Claude Code token: ');
+  const anthropicToken = await prompt.ask('  Anthropic API key or Claude setup-token: ');
   const hasAnthropicToken = Boolean(anthropicToken);
   const looksLikeClaudeToken = anthropicToken ? anthropicToken.startsWith('sk-ant-oat01-') : false;
-  let tokenMode: 'api' | 'oauth' | null = null;
+  let tokenMode: 'api' | 'setup' | 'oauth' | null = null;
 
   if (hasAnthropicToken) {
-    console.log('  Is this token an API key or an OAuth token?');
-    console.log('  Tip: Many sk-ant-oat01- tokens work as API keys in OpenClaw.');
-    const modeAnswer = await prompt.ask('  Use as [A]PI key or [O]Auth token? (default: API) ');
-    if (modeAnswer.toLowerCase().startsWith('o')) {
+    console.log('  What type of Anthropic auth is this?');
+    console.log('  - API key: from Anthropic Console (recommended for servers)');
+    console.log('  - Setup-token: from `claude setup-token` (Claude subscription)');
+    console.log('  - OAuth token: advanced (rare; may not work for Claude subscription)');
+    const modeAnswer = await prompt.ask('  Use as [A]PI key, [S]etup-token, or [O]Auth token? (default: API) ');
+    if (modeAnswer.toLowerCase().startsWith('s')) {
+      tokenMode = 'setup';
+    } else if (modeAnswer.toLowerCase().startsWith('o')) {
       tokenMode = 'oauth';
     } else {
       tokenMode = 'api';
@@ -293,8 +297,12 @@ async function setupOpenClaw(
     if (looksLikeClaudeToken && tokenMode === 'api') {
       console.log('  Using token as ANTHROPIC_API_KEY (API key mode).');
     }
+    if (tokenMode === 'setup') {
+      console.log('  Using token as Claude setup-token (stored for OpenClaw auth profiles).');
+    }
     if (tokenMode === 'oauth') {
       console.log('  Using token as ANTHROPIC_OAUTH_TOKEN (OAuth mode).');
+      console.log('  Note: For Claude subscriptions, setup-token is recommended.');
     }
   }
 
@@ -316,7 +324,7 @@ async function setupOpenClaw(
     }
   }
 
-  // Best-effort validation for OAuth tokens
+  // Best-effort validation for OAuth tokens (advanced use only)
   if (anthropicToken && tokenMode === 'oauth') {
     try {
       const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
@@ -368,6 +376,11 @@ async function setupOpenClaw(
     env.ANTHROPIC_OAUTH_TOKEN = anthropicToken;
   } else if (anthropicToken && tokenMode === 'api') {
     env.ANTHROPIC_API_KEY = anthropicToken;
+  }
+  if (anthropicToken && tokenMode === 'setup') {
+    ocConfig.acp = {
+      anthropicSetupToken: anthropicToken,
+    };
   }
   if (braveKey) env.BRAVE_API_KEY = braveKey;
   if (Object.keys(env).length > 0) {

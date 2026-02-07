@@ -124,6 +124,7 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   const ocConfigDest = path.join(workspaceDir, '.openclaw');
   fs.mkdirSync(ocConfigDest, { recursive: true });
   const forwardEnvKeys: string[] = [];
+  let setupToken: string | null = null;
   try {
     const raw = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8'));
     if (!raw.gateway) raw.gateway = {};
@@ -142,6 +143,12 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
           process.env[key] = value;
           forwardEnvKeys.push(key);
         }
+      }
+    }
+    if (raw.acp && typeof raw.acp === 'object') {
+      const acp = raw.acp as Record<string, unknown>;
+      if (typeof acp.anthropicSetupToken === 'string' && acp.anthropicSetupToken.length > 0) {
+        setupToken = acp.anthropicSetupToken;
       }
     }
     fs.writeFileSync(
@@ -170,6 +177,28 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
     "",
   ].join('\n');
   fs.writeFileSync(proxyBootstrapPath, proxyBootstrap, 'utf-8');
+
+  // If a Claude setup-token was provided, import it into OpenClaw auth profiles.
+  // This uses OpenClaw's supported auth store instead of env vars.
+  if (setupToken) {
+    try {
+      const authEnv = {
+        ...process.env,
+        OPENCLAW_STATE_DIR: ocConfigDest,
+      };
+      execSync(`${ocBin} models auth paste-token --provider anthropic`, {
+        cwd: workspaceDir,
+        env: authEnv,
+        input: `${setupToken}\n`,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 20000,
+      });
+      console.log('  Imported Claude setup-token into OpenClaw auth profiles.');
+    } catch {
+      console.error('  Warning: Failed to import Claude setup-token via OpenClaw CLI.');
+      console.error('  The messaging bot may not respond without valid auth.');
+    }
+  }
 
   // Resolve the openclaw.yml policy template relative to this package
   // dist/cli/start.js -> dist/cli -> dist -> cli -> repo root
