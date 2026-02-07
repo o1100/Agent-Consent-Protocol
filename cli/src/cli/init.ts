@@ -386,7 +386,8 @@ async function setupOpenClaw(
   if (anthropicToken && tokenMode === 'setup') {
     try {
       const setupTokenPath = path.join(OC_DIR, '.acp-setup-token');
-      fs.writeFileSync(setupTokenPath, anthropicToken + '\n', { mode: 0o600 });
+      fs.writeFileSync(setupTokenPath, anthropicToken + '\n');
+      fs.chmodSync(setupTokenPath, 0o600);
     } catch {
       console.error('  Warning: Failed to save setup-token file for OpenClaw.');
     }
