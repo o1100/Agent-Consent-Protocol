@@ -382,6 +382,9 @@ async function setupOpenClaw(
     ocConfig.env = env;
   }
 
+  // Ensure directory exists before writing any files
+  fs.mkdirSync(OC_DIR, { recursive: true });
+
   // Store setup-token separately so we don't put unknown keys in openclaw.json
   if (anthropicToken && tokenMode === 'setup') {
     try {
@@ -394,7 +397,6 @@ async function setupOpenClaw(
   }
 
   // Write config
-  fs.mkdirSync(OC_DIR, { recursive: true });
   fs.writeFileSync(OC_CONFIG, JSON.stringify(ocConfig, null, 2) + '\n', 'utf-8');
   console.log(`  OpenClaw config saved to ${OC_CONFIG}`);
 
