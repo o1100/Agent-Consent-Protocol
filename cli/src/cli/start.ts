@@ -190,23 +190,39 @@ async function startOpenClaw(options: StartOptions): Promise<void> {
   fs.writeFileSync(proxyBootstrapPath, proxyBootstrap, 'utf-8');
 
   // If a Claude setup-token was provided, import it into OpenClaw auth profiles.
-  // This uses OpenClaw's supported auth store instead of env vars.
+  // Write auth-profiles.json directly. The `openclaw models auth paste-token`
+  // CLI uses an interactive TUI prompt that silently fails with piped stdin,
+  // exiting 0 without writing the file.
   if (setupToken) {
     try {
-      const authEnv = {
-        ...process.env,
-        OPENCLAW_STATE_DIR: ocConfigDest,
+      const agentDir = path.join(ocConfigDest, 'agents', 'main', 'agent');
+      const authStorePath = path.join(agentDir, 'auth-profiles.json');
+      fs.mkdirSync(agentDir, { recursive: true });
+
+      // Merge into existing store if present, otherwise create new
+      let store: { version: number; profiles: Record<string, unknown> };
+      try {
+        store = JSON.parse(fs.readFileSync(authStorePath, 'utf-8'));
+        if (!store.profiles || typeof store.profiles !== 'object') {
+          store = { version: 1, profiles: {} };
+        }
+      } catch {
+        store = { version: 1, profiles: {} };
+      }
+
+      store.profiles['anthropic:manual'] = {
+        type: 'token',
+        provider: 'anthropic',
+        token: setupToken,
       };
-      execSync(`${ocBin} models auth paste-token --provider anthropic`, {
-        cwd: workspaceDir,
-        env: authEnv,
-        input: `${setupToken}\n`,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 20000,
+
+      fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + '\n', {
+        mode: 0o600,
       });
       console.log('  Imported Claude setup-token into OpenClaw auth profiles.');
-    } catch {
-      console.error('  Warning: Failed to import Claude setup-token via OpenClaw CLI.');
+    } catch (err) {
+      console.error('  Warning: Failed to write auth profiles.');
+      console.error(`  ${(err as Error).message}`);
       console.error('  The messaging bot may not respond without valid auth.');
     }
   }
