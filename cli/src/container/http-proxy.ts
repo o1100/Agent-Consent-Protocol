@@ -224,6 +224,9 @@ export class HttpProxy {
     head: Buffer
   ): void {
     const serverSocket = net.connect({ host, port, timeout: 30000 }, () => {
+      // Connection established — disable the idle timeout so long-lived
+      // tunnels (e.g. Telegram long-poll) aren't killed prematurely.
+      serverSocket.setTimeout(0);
       clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head.length > 0) {
         serverSocket.write(head);
@@ -233,6 +236,7 @@ export class HttpProxy {
     });
 
     serverSocket.on('timeout', () => {
+      // Only fires during initial connect (before setTimeout(0) above)
       serverSocket.destroy();
       if (clientSocket.writable) {
         clientSocket.write('HTTP/1.1 504 Gateway Timeout\r\n\r\n');
