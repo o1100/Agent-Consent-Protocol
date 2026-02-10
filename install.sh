@@ -150,12 +150,37 @@ fi
 
 echo ""
 
-# acp start openclaw (interactive — runs the gateway)
+# acp start openclaw — run once to set up workspace, then install as systemd service
 if [ -f "$HOME/.openclaw/openclaw.json" ]; then
-    echo "   Starting OpenClaw inside ACP containment..."
-    echo "   Press Ctrl+C to stop the gateway when done."
-    echo ""
-    docker_run acp start openclaw </dev/tty
+    echo "   Setting up OpenClaw workspace (first-time install)..."
+    # Run gateway briefly to trigger workspace setup, then let systemd manage it
+    timeout 30 acp start openclaw </dev/null >/dev/null 2>&1 || true
+
+    echo "   Creating systemd user service for persistence..."
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/acp-openclaw.service" <<'UNIT'
+[Unit]
+Description=ACP OpenClaw Gateway
+After=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/acp start openclaw
+Restart=on-failure
+RestartSec=10
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
+UNIT
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now acp-openclaw.service
+    # Allow user services to run after logout
+    sudo loginctl enable-linger "$USER" 2>/dev/null || true
+    ok "OpenClaw gateway running as systemd service"
+    echo "   Service: systemctl --user status acp-openclaw"
+    echo "   Logs:    journalctl --user -u acp-openclaw -f"
 else
     echo "   Skipping 'acp start openclaw' — no OpenClaw config found."
     echo "   If you configured the OpenClaw messaging bot during 'acp init',"
@@ -167,7 +192,8 @@ banner "Setup complete"
 echo ""
 echo "   Quick reference:"
 echo "   acp init --channel=telegram    Re-run setup wizard"
-echo "   acp start openclaw             Start OpenClaw gateway"
-echo "   acp contain -- python agent.py Run any agent through ACP"
-echo "   cat ~/.acp/audit.jsonl         View audit log"
+echo "   systemctl --user restart acp-openclaw   Restart gateway"
+echo "   journalctl --user -u acp-openclaw -f    View logs"
+echo "   acp contain -- python agent.py          Run any agent through ACP"
+echo "   cat ~/.acp/audit.jsonl                  View audit log"
 echo ""

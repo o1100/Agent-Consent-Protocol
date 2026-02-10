@@ -374,7 +374,7 @@ async function setupOpenClaw(
   const env: Record<string, string> = {};
   if (anthropicToken && tokenMode === 'oauth') {
     env.ANTHROPIC_OAUTH_TOKEN = anthropicToken;
-  } else if (anthropicToken && tokenMode === 'api') {
+  } else if (anthropicToken && (tokenMode === 'api' || tokenMode === 'setup')) {
     env.ANTHROPIC_API_KEY = anthropicToken;
   }
   if (braveKey) env.BRAVE_API_KEY = braveKey;
