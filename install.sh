@@ -144,7 +144,7 @@ if [ -f "$HOME/.acp/config.yml" ]; then
     skip "ACP already configured (~/.acp/config.yml exists)"
     echo "   Run 'acp init --channel=telegram' again to reconfigure."
 else
-    if [ -e /dev/tty ]; then
+    if [ -t 0 ]; then
         acp init --channel=telegram </dev/tty
     else
         acp init --channel=telegram
