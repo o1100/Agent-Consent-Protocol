@@ -153,6 +153,15 @@ export async function containCommand(
 
   docker.ensureNetwork();
   const gatewayIp = docker.getGatewayIp();
+
+  // Auto-allow traffic to the ACP gateway (consent server + proxy) to prevent
+  // circular dependency where the shell wrapper's consent POST goes through
+  // the HTTP proxy and triggers another consent request.
+  policy.prependRule({
+    match: { kind: 'http', host: gatewayIp },
+    action: 'allow',
+  });
+
   const image = options.image || docker.detectImage(command);
   docker.pullImage(image);
   const workspaceDir = options.workspace || process.cwd();
