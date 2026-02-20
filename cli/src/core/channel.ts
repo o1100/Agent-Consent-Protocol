@@ -46,6 +46,7 @@ export class TelegramChannel implements Channel {
       ]],
     };
 
+    console.log(`  [telegram] Sending consent request (id=${requestId})`);
     try {
       const sendResult = await this.telegramApi('sendMessage', {
         chat_id: this.chatId,
@@ -78,8 +79,12 @@ export class TelegramChannel implements Channel {
         });
 
         if (data.ok && data.result) {
+          if (data.result.length > 0) {
+            console.log(`  [telegram] Got ${data.result.length} update(s)`);
+          }
           for (const update of data.result) {
             offset = update.update_id;
+            console.log(`  [telegram] Update ${update.update_id}: ${update.message ? 'message' : update.callback_query ? 'callback' : 'other'}`);
 
             // Reply to text messages so the user knows the bot is alive
             const msg = update.message;
@@ -145,15 +150,25 @@ export class TelegramChannel implements Channel {
     method: string,
     body: Record<string, unknown>
   ): Promise<any> {
-    const res = await fetch(
-      `https://api.telegram.org/bot${this.botToken}/${method}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+    console.log(`  [telegram] API call: ${method}`);
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.botToken}/${method}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
+      const json = await res.json() as Record<string, unknown>;
+      if (!json.ok) {
+        console.log(`  [telegram] API ${method} -> error: ${json.description}`);
       }
-    );
-    return res.json();
+      return json;
+    } catch (err) {
+      console.log(`  [telegram] API ${method} -> FETCH FAILED: ${(err as Error).message}`);
+      throw err;
+    }
   }
 }
 

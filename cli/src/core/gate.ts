@@ -28,6 +28,7 @@ export function createGate(options: GateOptions): ConsentGate {
 
   return async (action: Action): Promise<Verdict> => {
     const result = policy.evaluate(action);
+    console.log(`  [gate] ${action.name} ${(action.args || '').substring(0, 60)} -> policy: ${result.action} (${result.reason})`);
     let verdict: Verdict;
 
     switch (result.action) {

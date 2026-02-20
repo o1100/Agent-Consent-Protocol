@@ -38,10 +38,12 @@ export class HttpProxy {
 
   async start(): Promise<void> {
     this.server = http.createServer(async (req, res) => {
+      console.log(`  [proxy] HTTP ${req.method} ${req.url} from=${req.socket.remoteAddress}`);
       await this.handleHttpRequest(req, res);
     });
 
     this.server.on('connect', (req, clientSocket: net.Socket, head) => {
+      console.log(`  [proxy] CONNECT ${req.url} from=${clientSocket.remoteAddress}`);
       this.handleConnect(req, clientSocket, head);
     });
 
@@ -99,6 +101,7 @@ export class HttpProxy {
     // Check if Layer 1 already approved this traffic
     clearExpiredTokens();
     if (hasValidApprovalToken()) {
+      console.log(`  [proxy] HTTP ${method} ${host} -> auto-allowed (Layer 1 token)`);
       this.forwardHttpRequest(req, res, parsedUrl, method);
       return;
     }
@@ -117,6 +120,7 @@ export class HttpProxy {
     try {
       const verdict = await this.gate(action);
 
+      console.log(`  [proxy] HTTP ${method} ${host} -> verdict: ${verdict.decision} (${verdict.reason})`);
       if (verdict.decision === 'deny') {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -126,6 +130,7 @@ export class HttpProxy {
         return;
       }
     } catch (err) {
+      console.log(`  [proxy] HTTP ${method} ${host} -> ERROR: ${(err as Error).message}`);
       res.writeHead(502, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         error: 'ACP proxy error',
@@ -155,11 +160,13 @@ export class HttpProxy {
     delete (forwardOptions.headers as Record<string, unknown>)['proxy-connection'];
 
     const proxyReq = http.request(forwardOptions, (proxyRes) => {
+      console.log(`  [proxy] HTTP forward ${method} ${parsedUrl.hostname} -> ${proxyRes.statusCode}`);
       res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
       proxyRes.pipe(res, { end: true });
     });
 
     proxyReq.on('error', (err) => {
+      console.log(`  [proxy] HTTP forward error: ${err.message}`);
       if (!res.headersSent) {
         res.writeHead(502, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Upstream connection failed', reason: err.message }));
@@ -185,6 +192,7 @@ export class HttpProxy {
     // Check if Layer 1 already approved this traffic
     clearExpiredTokens();
     if (hasValidApprovalToken()) {
+      console.log(`  [proxy] CONNECT ${host}:${port} -> auto-allowed (Layer 1 token)`);
       this.establishTunnel(host, port, clientSocket, head);
       return;
     }
@@ -202,13 +210,15 @@ export class HttpProxy {
 
     try {
       const verdict = await this.gate(action);
+      console.log(`  [proxy] CONNECT ${host}:${port} -> verdict: ${verdict.decision} (${verdict.reason})`);
 
       if (verdict.decision === 'deny') {
         clientSocket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         clientSocket.end();
         return;
       }
-    } catch {
+    } catch (err) {
+      console.log(`  [proxy] CONNECT ${host}:${port} -> ERROR: ${(err as Error).message}`);
       clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
       clientSocket.end();
       return;
@@ -223,10 +233,12 @@ export class HttpProxy {
     clientSocket: net.Socket,
     head: Buffer
   ): void {
-    const serverSocket = net.connect({ host, port, timeout: 30000 }, () => {
+    console.log(`  [proxy] tunnel establishing -> ${host}:${port}`);
+    const serverSocket = net.connect({ host, port, timeout: 30000, autoSelectFamily: false, family: 4 }, () => {
       // Connection established — disable the idle timeout so long-lived
       // tunnels (e.g. Telegram long-poll) aren't killed prematurely.
       serverSocket.setTimeout(0);
+      console.log(`  [proxy] tunnel connected -> ${host}:${port}`);
       clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head.length > 0) {
         serverSocket.write(head);
@@ -237,6 +249,7 @@ export class HttpProxy {
 
     serverSocket.on('timeout', () => {
       // Only fires during initial connect (before setTimeout(0) above)
+      console.log(`  [proxy] tunnel timeout -> ${host}:${port}`);
       serverSocket.destroy();
       if (clientSocket.writable) {
         clientSocket.write('HTTP/1.1 504 Gateway Timeout\r\n\r\n');
@@ -245,17 +258,24 @@ export class HttpProxy {
     });
 
     serverSocket.on('error', (err) => {
+      const e = err as NodeJS.ErrnoException;
+      console.log(`  [proxy] server-side tunnel error -> ${host}:${port}: code=${e.code} msg=${e.message} syscall=${e.syscall}`);
       if (clientSocket.writable) {
         clientSocket.write(`HTTP/1.1 502 Bad Gateway\r\n\r\n`);
         clientSocket.end();
       }
     });
 
-    clientSocket.on('error', () => {
+    clientSocket.on('error', (err) => {
+      const e = err as NodeJS.ErrnoException;
+      console.log(`  [proxy] client-side tunnel error -> ${host}:${port}: code=${e.code} msg=${e.message}`);
       serverSocket.destroy();
     });
 
     clientSocket.on('close', () => {
+      if (!serverSocket.destroyed) {
+        console.log(`  [proxy] client closed tunnel -> ${host}:${port}`);
+      }
       serverSocket.destroy();
     });
   }

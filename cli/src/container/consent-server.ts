@@ -130,8 +130,11 @@ export class ConsentServer {
       meta: { kind: 'shell' },
     };
 
+    console.log(`  [consent] ${parsed.name} ${(parsed.args || '').substring(0, 80)}`);
+
     try {
       const verdict = await this.gate(action);
+      console.log(`  [consent] ${parsed.name} -> ${verdict.decision} (${verdict.reason})`);
 
       if (verdict.decision === 'allow') {
         // Generate an approval token to avoid double-prompting at Layer 2
@@ -145,6 +148,7 @@ export class ConsentServer {
         res.end(JSON.stringify({ approved: false, reason: verdict.reason }));
       }
     } catch (err) {
+      console.log(`  [consent] ${parsed.name} -> ERROR: ${(err as Error).message}`);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         approved: false,
