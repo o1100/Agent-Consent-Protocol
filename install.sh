@@ -156,10 +156,6 @@ echo ""
 
 # acp start openclaw — run once to set up workspace, then install as systemd service
 if [ -f "$HOME/.openclaw/openclaw.json" ]; then
-    echo "   Setting up OpenClaw workspace (first-time install)..."
-    # Run gateway briefly to trigger workspace setup, then let systemd manage it
-    timeout 30 acp start openclaw </dev/null >/dev/null 2>&1 || true
-
     echo "   Creating systemd user service for persistence..."
     mkdir -p "$HOME/.config/systemd/user"
     cat > "$HOME/.config/systemd/user/acp-openclaw.service" <<'UNIT'

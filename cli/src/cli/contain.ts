@@ -152,6 +152,7 @@ export async function containCommand(
   }
 
   docker.ensureNetwork();
+  docker.cleanup();  // Kill any stale containers from previous runs
   const gatewayIp = docker.getGatewayIp();
 
   // Auto-allow traffic to the ACP gateway (consent server + proxy) to prevent
