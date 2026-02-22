@@ -136,14 +136,17 @@ export class TelegramChannel implements Channel {
               text: isApprove ? 'Approved' : 'Denied',
             }).catch(() => {});
 
-            // Edit the original message to show result
+            // Replace buttons with a single result button, preserving the original message
             if (messageId) {
-              const status = isApprove ? 'APPROVED' : 'DENIED';
-              await this.telegramApi('editMessageText', {
+              const resultButton = isApprove
+                ? { text: '\u2705 Approved', callback_data: 'acp_noop_approved' }
+                : { text: '\u274c Denied', callback_data: 'acp_noop_denied' };
+              await this.telegramApi('editMessageReplyMarkup', {
                 chat_id: this.chatId,
                 message_id: messageId,
-                text: `*ACP Consent Request*\n\n*${status}*\n\n_Decision recorded._`,
-                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [[resultButton]],
+                },
               }).catch(() => {});
             }
 
@@ -158,13 +161,14 @@ export class TelegramChannel implements Channel {
       }
     }
 
-    // Edit message to show timeout
+    // Replace buttons with timeout indicator, preserving the original message
     if (messageId) {
-      await this.telegramApi('editMessageText', {
+      await this.telegramApi('editMessageReplyMarkup', {
         chat_id: this.chatId,
         message_id: messageId,
-        text: '*ACP Consent Request*\n\n*TIMED OUT* (auto\\-denied)',
-        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[{ text: '\u23f0 Timed Out', callback_data: 'acp_noop_timeout' }]],
+        },
       }).catch(() => {});
     }
 
