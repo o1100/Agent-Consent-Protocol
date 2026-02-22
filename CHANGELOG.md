@@ -1,6 +1,6 @@
-# v0.2 to v0.3.0: What Changed
+# Changelog
 
-This document summarizes the practical delta for operators and contributors.
+## v0.3.0
 
 ## Net Direction
 

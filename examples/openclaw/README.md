@@ -23,7 +23,7 @@ sudo apt-get install -y nftables build-essential
 ## Install ACP
 
 ```bash
-npm install -g agent-consent-protocol
+npm install -g agent-2fa
 acp --version
 ```
 

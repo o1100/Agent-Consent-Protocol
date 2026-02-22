@@ -1,5 +1,5 @@
 {
-  "name": "agent-consent-protocol",
+  "name": "agent-2fa",
   "version": "0.3.0",
   "description": "2FA for AI Agents — Human consent gating for OpenClaw on Linux VMs with fail-closed egress mediation.",
   "type": "module",

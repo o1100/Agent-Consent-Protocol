@@ -30,7 +30,7 @@ sudo apt-get install -y nftables build-essential ca-certificates
 ### npm install
 
 ```bash
-sudo npm install -g agent-consent-protocol
+sudo npm install -g agent-2fa
 acp --version
 ```
 

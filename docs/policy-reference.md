@@ -12,7 +12,23 @@ Default active policy (OpenClaw VM mode):
 
 - `/home/<openclaw-user>/.acp/policy.yml`
 
-## Schema
+## Schema (VM mode)
+
+```yaml
+default: ask
+
+rules:
+  - match:
+      kind: http
+      host: "*.example.com"
+      method: "GET"
+    action: allow
+    timeout: 120
+```
+
+In VM mode (`acp start openclaw`), policy evaluates outbound HTTP requests hitting ACP's proxy. The `name` and `args` match fields are not used — all enforcement is at the network layer via host/method matching.
+
+### Legacy schema (Docker mode only)
 
 ```yaml
 default: ask
@@ -26,12 +42,10 @@ rules:
   - match:
       name: "gh"
       args: "pr list*"
-      kind: http
-      host: "*.example.com"
-      method: "GET"
     action: allow
-    timeout: 120
 ```
+
+The `wrap` list and `name`/`args` match fields are only used by `acp contain` (Docker mode), where PATH-based shell wrappers intercept commands before execution.
 
 ## Actions
 
@@ -43,20 +57,23 @@ rules:
 
 ## Match Fields
 
-### `name`
-Matches shell command name (exact or glob).
+### VM mode (`acp start openclaw`)
 
-### `args`
-Matches shell arguments as a glob pattern.
+| Field | Description |
+|---|---|
+| `kind` | `http` (only relevant kind in VM mode) |
+| `host` | HTTP host match (exact or glob) |
+| `method` | HTTP method match (`GET`, `POST`, etc) |
 
-### `kind`
-`shell` or `http`.
+### Legacy Docker mode (`acp contain`)
 
-### `host`
-HTTP host match (exact or glob).
-
-### `method`
-HTTP method match (`GET`, `POST`, etc).
+| Field | Description |
+|---|---|
+| `name` | Shell command name (exact or glob) |
+| `args` | Shell arguments as a glob pattern |
+| `kind` | `shell` or `http` |
+| `host` | HTTP host match (exact or glob) |
+| `method` | HTTP method match (`GET`, `POST`, etc) |
 
 ## Rule Evaluation
 
@@ -66,12 +83,9 @@ HTTP method match (`GET`, `POST`, etc).
 
 ## `wrap` in v0.3.0
 
-`wrap` is **legacy mode only**.
+`wrap` is **Docker mode only** (`acp contain`). It is ignored by `acp start openclaw`.
 
-- Used by `acp contain` (Docker wrapper path)
-- Not used by `acp start openclaw` VM mode
-
-VM mode primarily evaluates outbound HTTP actions through proxy mediation.
+In VM mode, there are no shell wrappers. All enforcement is at the network layer: nftables blocks direct egress, and HTTP traffic is routed through ACP's consent proxy where `rules` are evaluated by host/method.
 
 ## Built-in Templates
 

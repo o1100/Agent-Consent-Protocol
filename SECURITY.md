@@ -29,21 +29,29 @@ Enforced controls in this mode:
 
 ## Known Limitations
 
-1. **Default user-owned config paths are tamperable by runtime user.**
+1. **Agent-native tools bypass ACP consent gating.**
+   OpenClaw's built-in tools (`web_search`, `web_fetch`) execute server-side
+   on OpenClaw's infrastructure. ACP's nftables rules and proxy only see the
+   API connection to OpenClaw's backend — individual tool actions (web searches,
+   URL fetches) are invisible to ACP and do not trigger consent requests.
+   This is a fundamental limitation of network-layer enforcement for agents
+   with server-side tool execution.
+
+2. **Default user-owned config paths are tamperable by runtime user.**
    By default, ACP config/policy live under `/home/openclaw/.acp`.
    If OpenClaw user is compromised, policy/config can be modified.
 
-2. **Approval channel trust and availability are external dependencies.**
+3. **Approval channel trust and availability are external dependencies.**
    If Telegram/webhook paths are unavailable, `ask` flows can block or deny.
 
-3. **OpenClaw dependency drift on first startup.**
+4. **OpenClaw dependency drift on first startup.**
    `acp start openclaw` installs `openclaw@latest` by default.
    Native dependency builds may require host toolchain (`build-essential`).
 
-4. **Host compromise is out of scope.**
+5. **Host compromise is out of scope.**
    If root or host OS is compromised, ACP guarantees do not hold.
 
-5. **Legacy `acp contain` mode has different assumptions.**
+6. **Legacy `acp contain` mode has different assumptions.**
    `acp contain` remains for compatibility and should not be treated as the
    primary `v0.3.x` production posture.
 

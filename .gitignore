@@ -29,3 +29,7 @@ Thumbs.db
 *.tfstate.backup
 *.tfvars
 .env.local
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

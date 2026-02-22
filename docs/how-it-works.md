@@ -21,7 +21,9 @@ OpenClaw process (uid=openclaw)
   -> forward or block
 ```
 
-Key property: OpenClaw cannot directly open arbitrary outbound TCP sessions once nftables rules are active.
+Key property: The openclaw UID cannot directly open arbitrary outbound TCP sessions once nftables rules are active.
+
+**Important caveat:** This only covers network connections originating from the local machine. OpenClaw's built-in tools (`web_search`, `web_fetch`) execute server-side on OpenClaw's infrastructure — the local process sends an API call to OpenClaw's backend, and the backend performs the actual web request. ACP sees the API connection but has no visibility into what the agent does through its own tool channel. See [Known Gaps](#known-gaps) below.
 
 ## Consent Decision Flow
 
@@ -49,6 +51,24 @@ Default paths when running `--openclaw-user=openclaw`:
 - OpenClaw config source: `/home/openclaw/.openclaw/openclaw.json`
 - Workspace: `/home/openclaw/openclaw-workspace`
 
+## Known Gaps
+
+### Agent-native tools bypass ACP
+
+OpenClaw has built-in tools (`web_search`, `web_fetch`) that access the internet through OpenClaw's own API backend, not through local outbound connections. The enforcement chain looks like this:
+
+```text
+OpenClaw process (local, uid=openclaw)
+  → API call to OpenClaw backend (via ACP proxy — allowed)
+    → OpenClaw backend (server-side, invisible to ACP)
+      → web_search("anything") → internet
+      → web_fetch("anything") → internet
+```
+
+ACP gates the network pipe but cannot see or control what the agent does through its own API channel. This means OpenClaw can search the web and fetch URLs without triggering a consent request.
+
+This is a fundamental limitation of network-layer enforcement for agents with server-side tool execution. Closing this gap would require OpenClaw to support proxy-aware or hook-based tool routing.
+
 ## Current Security Boundary
 
 What is enforced now:
@@ -56,9 +76,11 @@ What is enforced now:
 - OpenClaw runs non-root
 - ACP binaries are typically root-owned (if installed globally with sudo)
 - outbound network mediation is fail-closed while ACP is running
+- shell commands (`curl`, `wget`, etc.) are intercepted by ACP
 
-What is not fully hardened yet by default:
+What is **not** covered:
 
+- Agent-native tools (`web_search`, `web_fetch`) that execute server-side (see above)
 - ACP user-level config in `/home/openclaw/.acp` is writable by OpenClaw
 - systemd hardening and root-owned config layout are operator responsibilities today
 

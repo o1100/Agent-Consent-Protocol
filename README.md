@@ -2,12 +2,12 @@
 
 # Agent Consent Protocol (ACP)
 
-### MCP is how agents use tools. ACP is how humans control agents.
+### Human authorization for AI agents
 
 **v0.3.0: Linux VM-first consent gating for OpenClaw**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![npm: agent-consent-protocol](https://img.shields.io/npm/v/agent-consent-protocol.svg)](https://www.npmjs.com/package/agent-consent-protocol)
+[![npm: agent-2fa](https://img.shields.io/npm/v/agent-2fa.svg)](https://www.npmjs.com/package/agent-2fa)
 [![Node.js CI](https://github.com/o1100/Agent-Consent-Protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/o1100/Agent-Consent-Protocol/actions)
 
 [Website](https://agent2fa.dev) · [Spec](SPEC.md) · [Docs](docs/) · [Contributing](CONTRIBUTING.md)
@@ -44,7 +44,7 @@ sudo apt-get update -y
 sudo apt-get install -y nftables build-essential
 
 # 1) Install ACP
-npm install -g agent-consent-protocol
+npm install -g agent-2fa
 
 # 2) Create runtime user once (if missing)
 sudo useradd -m -s /bin/bash openclaw || true
@@ -69,8 +69,9 @@ Note: `build-essential` is required because `openclaw@latest` may compile native
 - only loopback proxy path is allowed for TCP egress
 - default decision path is fail-closed
 
-Important current limitation:
+Important current limitations:
 
+- **Agent-native tools bypass ACP.** OpenClaw's built-in tools (`web_search`, `web_fetch`) execute server-side on OpenClaw's infrastructure. ACP sees the API connection but cannot gate individual tool actions. The agent can search/fetch the web without triggering a consent request.
 - If ACP config/policy lives in `/home/openclaw/.acp`, OpenClaw can modify it.
 - ACP binaries installed under root-owned paths are not writable by OpenClaw.
 
@@ -91,7 +92,7 @@ It is no longer the primary path for `v0.3.0` OpenClaw VM deployments.
 ### npm
 
 ```bash
-npm install -g agent-consent-protocol
+npm install -g agent-2fa
 acp --version
 ```
 
@@ -149,7 +150,7 @@ See: [docs/v0.2-to-v0.3.0.md](docs/v0.2-to-v0.3.0.md)
 - [Policy Reference](docs/policy-reference.md)
 - [Design: v0.3.0 VM OpenClaw](docs/DESIGN-v0.3.0-vm-openclaw.md)
 - [Install Standard: v0.3.0 VM OpenClaw](docs/INSTALL-v0.3.0-vm-openclaw.md)
-- [Agent Install Skill](SKILL.md)
+- [OpenClaw Install Guide](OPENCLAW-INSTALL.md)
 - [v0.2 to v0.3.0 Delta](docs/v0.2-to-v0.3.0.md)
 - [Release Readiness: v0.3.0](docs/RELEASE-READINESS-v0.3.0.md)
 - [Protocol Spec](SPEC.md)
