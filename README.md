@@ -25,7 +25,9 @@
 `v0.3.0` is optimized for one target: **OpenClaw running on Linux cloud VMs**.
 
 Primary flow:
+1. Get your agent to follow OPENCLAW-INSTALL.md
 
+**OR**
 1. `acp init --channel=telegram` (as the OpenClaw runtime user)
 2. `sudo acp start openclaw --openclaw-user=openclaw`
 
