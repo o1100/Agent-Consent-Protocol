@@ -1,7 +1,7 @@
 {
   "name": "agent-consent-protocol",
   "version": "0.3.0",
-  "description": "2FA for AI Agents — Human consent via push notification for any agentic system. Docker-enforced, framework-agnostic.",
+  "description": "2FA for AI Agents — Human consent gating for OpenClaw on Linux VMs with fail-closed egress mediation.",
   "type": "module",
   "bin": {
     "acp": "./dist/index.js"
@@ -24,7 +24,9 @@
     "authorization",
     "2fa",
     "sandbox",
-    "docker",
+    "openclaw",
+    "linux-vm",
+    "nftables",
     "security",
     "audit",
     "human-in-the-loop",

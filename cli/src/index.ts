@@ -3,13 +3,12 @@
 /**
  * ACP CLI — Agent Consent Protocol
  *
- * 2FA for AI Agents. Human authorization via push notification
- * for any agentic system running inside a Docker container.
+ * 2FA for AI Agents. v0.3.0 is Linux VM-first for OpenClaw.
  *
  * Usage:
  *   acp init [--channel=prompt|telegram|webhook]
- *   acp start <preset> [--workspace=DIR]
- *   acp contain [options] -- <command>
+ *   acp start <preset> [--workspace=DIR] [--openclaw-user=USER]
+ *   acp contain [options] -- <command>   (legacy Docker compatibility)
  */
 
 import { Command } from 'commander';
@@ -35,7 +34,7 @@ program
 // acp contain -- <command>
 program
   .command('contain')
-  .description('Run an agent inside a consent-gated Docker container')
+  .description('Run an agent in legacy Docker compatibility mode')
   .option('--interactive', 'Pass stdin to container (requires non-terminal channel)', false)
   .option('--writable', 'Disable read-only filesystem for containers that need it', false)
   .option('--image <image>', 'Docker image (default: auto-detect from command)')
@@ -53,10 +52,12 @@ program
 
 // acp start <preset>
 program
-  .command('start')
-  .description('Start a known agent inside ACP containment')
+ .command('start')
+  .description('Start a known agent in ACP Linux VM mode')
   .argument('<preset>', 'Agent preset to run (e.g. openclaw)')
-  .option('--workspace <dir>', 'Workspace directory (default: ~/openclaw-workspace)')
+  .option('--workspace <dir>', 'Workspace directory (default: target user home/openclaw-workspace)')
+  .option('--openclaw-user <user>', 'Linux user to run OpenClaw under', 'openclaw')
+  .option('--http-proxy-port <port>', 'HTTP proxy port', '8444')
   .option('--config <dir>', 'ACP config directory (default: ~/.acp)')
   .action(startCommand);
 

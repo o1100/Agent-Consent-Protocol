@@ -12,8 +12,10 @@ import type { Channel, ChannelResponse } from '../core/channel.js';
 class MockChannel implements Channel {
   public lastAction: Action | null = null;
   public response: ChannelResponse = { approved: true };
+  public askCount = 0;
 
   async ask(action: Action, _timeoutMs: number): Promise<ChannelResponse> {
+    this.askCount += 1;
     this.lastAction = action;
     return this.response;
   }
@@ -154,5 +156,29 @@ rules:
     const entry2 = JSON.parse(lines[1]);
     assert.strictEqual(entry2.action.name, 'rm');
     assert.strictEqual(entry2.verdict.decision, 'deny');
+  });
+
+  it('reuses recent HTTP approvals for www/non-www host twins', async () => {
+    channel.response = { approved: true };
+
+    const firstVerdict = await gate({
+      name: 'http:CONNECT',
+      args: 'google.com:443',
+      meta: { kind: 'http', host: 'google.com', method: 'CONNECT' },
+    });
+
+    assert.strictEqual(firstVerdict.decision, 'allow');
+    assert.strictEqual(channel.askCount, 1);
+
+    channel.response = { approved: false, reason: 'should not be used' };
+    const secondVerdict = await gate({
+      name: 'http:CONNECT',
+      args: 'www.google.com:443',
+      meta: { kind: 'http', host: 'www.google.com', method: 'CONNECT' },
+    });
+
+    assert.strictEqual(secondVerdict.decision, 'allow');
+    assert.strictEqual(secondVerdict.reason, 'Approved by human (cached host approval)');
+    assert.strictEqual(channel.askCount, 1);
   });
 });

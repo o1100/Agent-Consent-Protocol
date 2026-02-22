@@ -7,6 +7,7 @@
  */
 
 import path from 'node:path';
+import https from 'node:https';
 import type { Action } from './types.js';
 
 export interface ChannelResponse {
@@ -25,13 +26,22 @@ export interface Channel {
 export class TelegramChannel implements Channel {
   private botToken: string;
   private chatId: string;
+  private consentQueue: Promise<void>;
 
   constructor(botToken: string, chatId: string) {
     this.botToken = botToken;
     this.chatId = chatId;
+    this.consentQueue = Promise.resolve();
   }
 
   async ask(action: Action, timeoutMs: number): Promise<ChannelResponse> {
+    const run = async (): Promise<ChannelResponse> => this.askInternal(action, timeoutMs);
+    const queued = this.consentQueue.then(run, run);
+    this.consentQueue = queued.then(() => undefined, () => undefined);
+    return queued;
+  }
+
+  private async askInternal(action: Action, timeoutMs: number): Promise<ChannelResponse> {
     if (!this.botToken || !this.chatId) {
       return { approved: false, reason: 'Telegram not configured' };
     }
@@ -48,14 +58,30 @@ export class TelegramChannel implements Channel {
 
     console.log(`  [telegram] Sending consent request (id=${requestId})`);
     try {
-      const sendResult = await this.telegramApi('sendMessage', {
-        chat_id: this.chatId,
-        text,
-        parse_mode: 'Markdown',
-        reply_markup: inlineKeyboard,
-      });
+      let sendResult: Record<string, unknown>;
+      try {
+        sendResult = await this.telegramApi('sendMessage', {
+          chat_id: this.chatId,
+          text,
+          parse_mode: 'Markdown',
+          reply_markup: inlineKeyboard,
+        });
+      } catch (err) {
+        const message = (err as Error).message;
+        const markdownParseFailed = /parse entities|can't parse|can't find end of/i.test(message);
+        if (!markdownParseFailed) {
+          throw err;
+        }
+        console.log('  [telegram] Markdown parse failed, retrying without Markdown...');
+        sendResult = await this.telegramApi('sendMessage', {
+          chat_id: this.chatId,
+          text: stripTelegramMarkdown(text),
+          reply_markup: inlineKeyboard,
+        });
+      }
 
-      const messageId = sendResult.result?.message_id;
+      const messageId = extractMessageId(sendResult);
+      console.log(`  [telegram] Consent request delivered (chat=${this.chatId}, message_id=${messageId ?? 'n/a'})`);
       console.log('  Consent request sent to Telegram. Waiting for response...');
       return await this.pollForResponse(requestId, messageId, timeoutMs);
     } catch (err) {
@@ -78,52 +104,52 @@ export class TelegramChannel implements Channel {
           timeout: 2,
         });
 
-        if (data.ok && data.result) {
-          if (data.result.length > 0) {
-            console.log(`  [telegram] Got ${data.result.length} update(s)`);
+        const updates = Array.isArray(data.result) ? data.result : [];
+        if (updates.length > 0) {
+          console.log(`  [telegram] Got ${updates.length} update(s)`);
+        }
+
+        for (const update of updates) {
+          offset = typeof update.update_id === 'number' ? update.update_id : offset;
+          console.log(`  [telegram] Update ${update.update_id}: ${update.message ? 'message' : update.callback_query ? 'callback' : 'other'}`);
+
+          // Reply to text messages so the user knows the bot is alive
+          const msg = update.message;
+          if (msg?.text) {
+            this.telegramApi('sendMessage', {
+              chat_id: msg.chat.id,
+              text: 'ACP bot is active. Waiting for a consent decision on the buttons above.',
+            }).catch(() => {});
+            continue;
           }
-          for (const update of data.result) {
-            offset = update.update_id;
-            console.log(`  [telegram] Update ${update.update_id}: ${update.message ? 'message' : update.callback_query ? 'callback' : 'other'}`);
 
-            // Reply to text messages so the user knows the bot is alive
-            const msg = update.message;
-            if (msg?.text) {
-              this.telegramApi('sendMessage', {
-                chat_id: msg.chat.id,
-                text: 'ACP bot is active. Waiting for a consent decision on the buttons above.',
+          const cb = update.callback_query;
+          if (!cb) continue;
+
+          const isApprove = cb.data === `approve_${requestId}`;
+          const isDeny = cb.data === `deny_${requestId}`;
+
+          if (isApprove || isDeny) {
+            // Answer the callback query
+            await this.telegramApi('answerCallbackQuery', {
+              callback_query_id: cb.id,
+              text: isApprove ? 'Approved' : 'Denied',
+            }).catch(() => {});
+
+            // Edit the original message to show result
+            if (messageId) {
+              const status = isApprove ? 'APPROVED' : 'DENIED';
+              await this.telegramApi('editMessageText', {
+                chat_id: this.chatId,
+                message_id: messageId,
+                text: `*ACP Consent Request*\n\n*${status}*\n\n_Decision recorded._`,
+                parse_mode: 'Markdown',
               }).catch(() => {});
-              continue;
             }
 
-            const cb = update.callback_query;
-            if (!cb) continue;
-
-            const isApprove = cb.data === `approve_${requestId}`;
-            const isDeny = cb.data === `deny_${requestId}`;
-
-            if (isApprove || isDeny) {
-              // Answer the callback query
-              await this.telegramApi('answerCallbackQuery', {
-                callback_query_id: cb.id,
-                text: isApprove ? 'Approved' : 'Denied',
-              }).catch(() => {});
-
-              // Edit the original message to show result
-              if (messageId) {
-                const status = isApprove ? 'APPROVED' : 'DENIED';
-                await this.telegramApi('editMessageText', {
-                  chat_id: this.chatId,
-                  message_id: messageId,
-                  text: `*ACP Consent Request*\n\n*${status}*\n\n_Decision recorded._`,
-                  parse_mode: 'Markdown',
-                }).catch(() => {});
-              }
-
-              return isApprove
-                ? { approved: true }
-                : { approved: false, reason: 'Denied via Telegram' };
-            }
+            return isApprove
+              ? { approved: true }
+              : { approved: false, reason: 'Denied via Telegram' };
           }
         }
       } catch {
@@ -151,24 +177,34 @@ export class TelegramChannel implements Channel {
     body: Record<string, unknown>
   ): Promise<any> {
     console.log(`  [telegram] API call: ${method}`);
-    try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${this.botToken}/${method}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const json = await postJson(
+          `https://api.telegram.org/bot${this.botToken}/${method}`,
+          body,
+        );
+        if (json.ok !== true) {
+          const description = typeof json.description === 'string'
+            ? json.description
+            : 'unknown Telegram API error';
+          const errorCode = typeof json.error_code === 'number'
+            ? json.error_code
+            : 0;
+          throw new Error(`Telegram API ${method} failed (${errorCode}): ${description}`);
         }
-      );
-      const json = await res.json() as Record<string, unknown>;
-      if (!json.ok) {
-        console.log(`  [telegram] API ${method} -> error: ${json.description}`);
+        return json;
+      } catch (err) {
+        lastError = err as Error;
+        console.log(`  [telegram] API ${method} attempt ${attempt}/3 failed: ${lastError.message}`);
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+        }
       }
-      return json;
-    } catch (err) {
-      console.log(`  [telegram] API ${method} -> FETCH FAILED: ${(err as Error).message}`);
-      throw err;
     }
+
+    throw lastError || new Error('Telegram API failed');
   }
 }
 
@@ -216,6 +252,22 @@ export class WebhookChannel implements Channel {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function extractMessageId(payload: Record<string, unknown>): number | undefined {
+  const result = payload.result;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return undefined;
+  }
+  const messageId = (result as Record<string, unknown>).message_id;
+  if (typeof messageId === 'number') {
+    return messageId;
+  }
+  return undefined;
+}
+
+function stripTelegramMarkdown(text: string): string {
+  return text.replace(/[`*_]/g, '');
+}
+
 function formatAction(action: Action): string {
   const lines = ['*ACP Consent Request*', ''];
 
@@ -244,4 +296,52 @@ function formatAction(action: Action): string {
   }
 
   return lines.join('\n');
+}
+
+// Minimal HTTPS JSON POST helper with IPv4 preference to avoid
+// intermittent fetch transport failures on some VM network stacks.
+async function postJson(
+  urlString: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const payload = JSON.stringify(body);
+  const url = new URL(urlString);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port ? Number(url.port) : 443,
+      path: `${url.pathname}${url.search}`,
+      method: 'POST',
+      family: 4,
+      timeout: 15000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data) as Record<string, unknown>;
+          resolve(parsed);
+        } catch {
+          reject(new Error(`Invalid Telegram JSON response (status ${res.statusCode || 0})`));
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Telegram API request timeout'));
+    });
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    req.write(payload);
+    req.end();
+  });
 }

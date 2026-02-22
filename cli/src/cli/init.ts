@@ -68,7 +68,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const POLICY_PATH = path.join(ACP_DIR, 'policy.yml');
 
   console.log('');
-  console.log('  ACP v0.3 — Agent Consent Protocol');
+  console.log('  ACP v0.3.0 — Agent Consent Protocol');
   console.log('  2FA for AI Agents');
   console.log('  ─────────────────────────────────');
   console.log('');
@@ -153,7 +153,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log('');
   } else {
     console.log('  Using terminal prompts for approvals.');
-    console.log('  Note: --contained mode requires Telegram or webhook.');
+    console.log('  Note: legacy contain mode generally requires Telegram or webhook.');
     console.log('');
   }
 

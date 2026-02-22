@@ -1,5 +1,14 @@
 # ACP v0.3.0: Agent Consent Protocol
 
+> [!WARNING]
+> This document is historical context and does not describe the current
+> `v0.3.0` implementation path in this repo.
+>
+> Use these docs for current behavior:
+> - `docs/DESIGN-v0.3.0-vm-openclaw.md`
+> - `docs/INSTALL-v0.3.0-vm-openclaw.md`
+> - `docs/integration-guide.md`
+
 ## The Problem
 
 AI agents (OpenClaw, etc.) need to take actions on your behalf — HTTP requests, API calls, file operations. Current solutions have two gaps:

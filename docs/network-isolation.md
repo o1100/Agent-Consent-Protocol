@@ -1,45 +1,34 @@
-# Network Isolation
+# Network Isolation (`v0.3.0`)
 
-ACP enforces network isolation by running the agent inside a Docker container. The container can only reach ACP's consent server and HTTP proxy on the host.
+ACP `v0.3.0` network isolation is centered on Linux VM mode for OpenClaw.
 
-## How It Works
+## Linux VM Mode (Primary)
 
-### Linux
-Docker `--internal` network: no outbound gateway exists at the kernel level. The agent cannot make any external connections. Only the host gateway IP is reachable (where ACP listens).
+When started with:
 
-### macOS / Windows
-Docker Desktop runs containers in a VM. ACP uses a bridge network with:
-- `HTTP_PROXY` / `HTTPS_PROXY` environment variables
-- `--dns=127.0.0.1` to break DNS resolution
-- `--add-host=acp-host:host-gateway` for container-to-host communication
+```bash
+sudo acp start openclaw --openclaw-user=openclaw
+```
 
-This is proxy-enforced isolation — weaker than Linux because a determined agent could make direct TCP connections to raw IPs, bypassing the proxy.
+ACP applies nftables rules tied to the OpenClaw UID:
 
-## Future: Docker Desktop microVM Sandboxes
+- allow TCP to ACP local proxy on loopback
+- allow DNS to configured resolver IPs
+- reject other outbound traffic for that user
 
-Docker Desktop offers microVM-based sandboxes on macOS/Windows that provide strong isolation similar to Linux `--internal` networks. However, `docker sandbox run` currently only supports a hardcoded list of agents (Claude, Gemini) and doesn't allow custom agents. When Docker adds support for arbitrary agents, ACP will integrate with microVM sandboxes for full cross-platform isolation.
+Result: OpenClaw outbound traffic is mediated by ACP policy gate or blocked.
 
-## Container Hardening
+## Fail-Closed Behavior
 
-Every ACP container runs with:
-- `--read-only` filesystem (can't install bypass tools)
-- `--cap-drop=ALL` (no Linux capabilities)
-- `--no-new-privileges` (no privilege escalation)
-- `--tmpfs /tmp` and `--tmpfs /home` (temporary writable areas)
-- `--pids-limit=256` (prevent fork bombs)
-- `--memory=2g` (prevent memory exhaustion)
+If ACP proxy/gate is unavailable, OpenClaw does not regain direct internet access through nftables bypass. Traffic is denied by default enforcement path.
 
-## Checking Isolation
+## Legacy Docker Mode (`acp contain`)
 
-The agent container receives environment variables indicating its isolation status:
-- `ACP_CONTAINED=1` — running in Docker container
-- `ACP_SANDBOX=1` — running under ACP control
+`acp contain` still provides Docker-based interception for compatibility workflows.
 
-## Recommendations
+It is not the primary security posture for `v0.3.0` OpenClaw deployments.
 
-| Environment | Recommendation |
-|---|---|
-| Linux servers | `acp contain` (full kernel-enforced isolation) |
-| macOS development | `acp contain` (proxy-enforced, functional but weaker) |
-| Windows development | `acp contain` (proxy-enforced, functional but weaker) |
-| Production (any OS) | Linux server with `acp contain` for strongest guarantees |
+## Platform Scope
+
+- Linux VM: supported and recommended for `v0.3.0`
+- macOS/Windows VM-mode parity: not implemented in `v0.3.0`
