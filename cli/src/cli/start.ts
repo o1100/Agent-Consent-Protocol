@@ -414,9 +414,9 @@ function prepareOpenClawWorkspace(options: {
         }
 
         store.profiles['anthropic:manual'] = {
-          type: 'token',
+          type: 'api_key',
           provider: 'anthropic',
-          token: setupToken,
+          key: setupToken,
         };
 
         fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + '\n', {
