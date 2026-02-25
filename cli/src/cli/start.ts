@@ -320,7 +320,12 @@ function prepareOpenClawWorkspace(options: {
     });
   }
 
-  const rawConfig = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8')) as Record<string, unknown>;
+  let rawConfig: Record<string, unknown>;
+  try {
+    rawConfig = JSON.parse(fs.readFileSync(ocConfigSrc, 'utf-8')) as Record<string, unknown>;
+  } catch (err) {
+    throw new Error(`Failed to parse OpenClaw config at ${ocConfigSrc}: ${(err as Error).message}`);
+  }
   const forwardEnv: Record<string, string> = {};
 
   const gateway = ensureRecord(rawConfig, 'gateway');

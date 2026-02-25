@@ -4,14 +4,15 @@ This file provides guidance for AI agents working on the Agent Consent Protocol 
 
 ## Project Overview
 
-ACP is an open standard for human authorization of AI agent actions. It runs agents in Docker containers with no direct internet access, intercepting shell commands and HTTP requests for human approval.
+ACP is an open standard for human authorization of AI agent actions. v0.3.0 is VM-first: it runs agents on Linux VMs with nftables egress rules, gating outbound HTTP/HTTPS through a local consent proxy. Legacy Docker container mode (`acp contain`) is still available.
 
 **Key concepts:**
 - **Consent Gate** — Decision engine: `(action) => Promise<verdict>`
 - **Policy Engine** — YAML rules: allow, ask, deny
 - **Channels** — Human notification: Telegram, terminal, webhook
-- **Two-layer interception** — Shell wrappers (semantic) + HTTP proxy (network)
-- **Container isolation** — Read-only filesystem, `--internal` network, no internet
+- **HTTP proxy interception** — Consent-gated forward proxy on loopback
+- **nftables egress control** — Per-user fail-closed outbound rules (VM mode)
+- **Container isolation** — Read-only filesystem, `--internal` network (legacy `acp contain`)
 
 ## Directory Structure
 
@@ -26,13 +27,16 @@ cli/                    # Main TypeScript CLI package
       audit.ts          # FileAuditLog — append-only JSONL
     container/          # Container enforcement (~600 lines)
       docker.ts         # Docker network + container orchestration
-      http-proxy.ts     # HTTP forward proxy (Layer 2)
+      http-proxy.ts     # HTTP forward proxy (consent-gated)
       shell-wrappers.ts # Generate wrapper scripts (Layer 1)
       consent-server.ts # HTTP server for wrapper callbacks
+    vm/                 # VM-mode enforcement (v0.3.0)
+      nftables.ts       # Per-user nftables egress rules
+      start-lock.ts     # PID lock for acp start
     cli/                # CLI commands
       init.ts           # acp init
       contain.ts        # acp contain -- <command>
-      start.ts          # acp start <preset>
+      start.ts          # acp start <preset> (VM mode)
     tests/              # Node.js built-in test runner
 policies/               # Policy YAML presets
 templates/              # Container templates
@@ -46,7 +50,7 @@ docs/                   # Documentation site
 cd cli
 npm install
 npm run build          # TypeScript compile
-npm test               # Run all tests (48 tests)
+npm test               # Run all tests (63 tests)
 
 # Development mode
 npm run dev            # Watch mode compilation

@@ -7,6 +7,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { execSync } from 'node:child_process';
@@ -63,7 +64,7 @@ function createPrompt(): { ask: (question: string) => Promise<string>; close: ()
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
-  const ACP_DIR = options.config || path.join(process.env.HOME || '~', '.acp');
+  const ACP_DIR = options.config || path.join(process.env.HOME || os.homedir(), '.acp');
   const CONFIG_PATH = path.join(ACP_DIR, 'config.yml');
   const POLICY_PATH = path.join(ACP_DIR, 'policy.yml');
 
@@ -233,7 +234,7 @@ async function setupOpenClaw(
   prompt: { ask: (q: string) => Promise<string> },
   chatId: string,
 ): Promise<void> {
-  const OC_DIR = path.join(process.env.HOME || '~', '.openclaw');
+  const OC_DIR = path.join(process.env.HOME || os.homedir(), '.openclaw');
   const OC_CONFIG = path.join(OC_DIR, 'openclaw.json');
 
   console.log('');

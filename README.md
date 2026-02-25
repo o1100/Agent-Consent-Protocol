@@ -142,7 +142,7 @@ acp contain [options] -- CMD   (legacy compatibility mode)
 
 ## What Changed From v0.2
 
-See: [docs/v0.2-to-v0.3.0.md](docs/v0.2-to-v0.3.0.md)
+See: [CHANGELOG.md](CHANGELOG.md)
 
 ## Documentation
 
@@ -153,7 +153,7 @@ See: [docs/v0.2-to-v0.3.0.md](docs/v0.2-to-v0.3.0.md)
 - [Design: v0.3.0 VM OpenClaw](docs/DESIGN-v0.3.0-vm-openclaw.md)
 - [Install Standard: v0.3.0 VM OpenClaw](docs/INSTALL-v0.3.0-vm-openclaw.md)
 - [OpenClaw Install Guide](OPENCLAW-INSTALL.md)
-- [v0.2 to v0.3.0 Delta](docs/v0.2-to-v0.3.0.md)
+- [v0.2 to v0.3.0 Delta](CHANGELOG.md)
 - [Release Readiness: v0.3.0](docs/RELEASE-READINESS-v0.3.0.md)
 - [Protocol Spec](SPEC.md)
 - [Security Policy](SECURITY.md)
