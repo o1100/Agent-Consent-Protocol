@@ -1,123 +1,73 @@
-# Integration Guide
+# Integration Guide (`v0.3.0`)
 
-ACP wraps processes — not frameworks. Any agent that runs as a command can be sandboxed with `acp run`.
+ACP `v0.3.0` has two execution paths:
 
-> **Important:** ACP only intercepts MCP tool calls. If your agent also makes direct HTTP requests, runs shell commands, or uses non-MCP interfaces, those actions are **not covered** by ACP. For full enforcement, enable [network isolation](network-isolation.md) (requires root/Docker).
+1. `acp start openclaw` (primary, Linux VM OpenClaw mode)
+2. `acp contain -- <command>` (legacy Docker compatibility mode)
 
-## OpenClaw
+## Primary Path: OpenClaw on Linux VM
 
-```bash
-acp run -- openclaw gateway
-```
-
-OpenClaw's MCP tool calls will be intercepted by ACP. No code changes needed.
-
-## LangChain (Python)
+### 0) Host prerequisites
 
 ```bash
-acp run -- python langchain_agent.py
+sudo apt-get update -y
+sudo apt-get install -y nftables build-essential
 ```
 
-If your LangChain agent uses MCP tools, ACP will intercept them transparently. For LangChain agents using native tool calls, set `ACP_PROXY_URL` as the MCP server endpoint.
-
-```python
-# langchain_agent.py
-import os
-from langchain_mcp import MCPToolkit
-
-# ACP injects this automatically
-mcp_url = os.environ.get("ACP_PROXY_URL", "http://localhost:8443")
-toolkit = MCPToolkit(server_url=mcp_url)
-```
-
-## AutoGen
+### 1) Ensure runtime user exists
 
 ```bash
-acp run -- python autogen_script.py
+sudo useradd -m -s /bin/bash openclaw || true
 ```
 
-AutoGen agents that use MCP will route through ACP automatically.
-
-## CrewAI
+### 2) Configure ACP and OpenClaw as that user
 
 ```bash
-acp run -- python crew.py
+sudo -u openclaw -H acp init --channel=telegram
 ```
 
-Same approach — ACP wraps the process, intercepts MCP calls.
+Wizard output:
 
-## Custom Agents (Any Language)
+- `/home/openclaw/.acp/config.yml`
+- `/home/openclaw/.acp/policy.yml`
+- optional `/home/openclaw/.openclaw/openclaw.json`
 
-ACP works with any agent that can make HTTP requests to an MCP server:
+### 3) Start VM mode
 
 ```bash
-# Node.js
-acp run -- node my_agent.js
-
-# Go
-acp run -- ./my-go-agent
-
-# Rust
-acp run -- ./my-rust-agent
-
-# Java
-acp run -- java -jar agent.jar
+sudo acp start openclaw --openclaw-user=openclaw
 ```
 
-Your agent just needs to connect to the MCP server at `ACP_PROXY_URL`:
+Behavior:
 
-```python
-# Python example
-import os, json, requests
+- installs/updates OpenClaw in workspace
+- starts ACP proxy and consent gate
+- installs nftables egress rules for OpenClaw user
+- runs OpenClaw gateway under that user
 
-proxy_url = os.environ["ACP_PROXY_URL"]
-
-# Make a tool call through ACP
-response = requests.post(proxy_url, json={
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-        "name": "send_email",
-        "arguments": {
-            "to": "boss@company.com",
-            "subject": "Report"
-        }
-    }
-})
-
-result = response.json()
-# If the human approved, result contains the tool output
-# If denied, result contains an error
-```
-
-## Docker
-
-For production, use Docker Compose for proper network isolation:
+### 4) Verify
 
 ```bash
-# Copy the example
-cp examples/docker-compose.yml .
-
-# Set your credentials
-export TELEGRAM_TOKEN=xxx
-export CHAT_ID=yyy
-
-# Run
-docker compose up
+sudo -u openclaw -H tail -f /home/openclaw/.acp/audit.jsonl
 ```
 
-See [examples/docker-compose.yml](../examples/docker-compose.yml).
+Trigger an external request from OpenClaw and confirm consent prompt appears.
 
-## Environment Variables
+## Policy Notes
 
-ACP injects these into the agent process:
+- Policy is evaluated for outbound HTTP actions.
+- Built-in safe host allowlist is prepended at startup for common provider endpoints.
+- Host approval cache exists for recent allow decisions (configurable via env).
 
-| Variable | Value | Description |
-|---|---|---|
-| `ACP_PROXY_URL` | `http://127.0.0.1:8443` | MCP proxy address |
-| `MCP_SERVER_URL` | `http://127.0.0.1:8443` | Alias for MCP SDK compat |
-| `ACP_SANDBOX` | `1` | Indicates running inside ACP |
-| `ACP_VERSION` | `0.1.0` | ACP version |
+See [policy-reference.md](./policy-reference.md) for schema.
 
-ACP also **strips** any environment variables that match vault secret keys, ensuring the agent never has direct access to credentials.
+## Legacy Path: `acp contain`
+
+`acp contain` remains available for Docker-based wrapping of generic agents.
+
+Use it when:
+
+- you need quick compatibility for non-OpenClaw commands
+- you are not deploying the Linux VM OpenClaw pattern
+
+Do not treat `acp contain` as the primary production path for `v0.3.0`.

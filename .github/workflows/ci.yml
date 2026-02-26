@@ -53,8 +53,8 @@ jobs:
               import { readFileSync } from 'fs';
               const content = readFileSync('$f', 'utf-8');
               const policy = parse(content);
-              if (!policy.version) throw new Error('Missing version');
-              if (!policy.default_action) throw new Error('Missing default_action');
+              if (!policy.default) throw new Error('Missing default');
+              if (!policy.rules) throw new Error('Missing rules');
               console.log('  ✅ Valid');
             " || exit 1
           done

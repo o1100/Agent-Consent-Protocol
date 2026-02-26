@@ -1,61 +1,80 @@
 # Security Policy
 
-## ⚠️ Project Status
+## Project Status
 
-ACP is an **experimental prototype** — an early research implementation of agent consent enforcement. It has not undergone formal security review and **should not be used to protect high-risk systems yet**.
-
-We take security seriously and are working toward a hardened v1. If you find issues, we want to know.
+ACP `v0.3.x` is an experimental Linux VM-first consent gate for OpenClaw.
+It is functional, but it has **not** undergone a formal third-party security audit.
 
 ## Supported Versions
 
-Only the latest published version receives security fixes.
-
 | Version | Supported |
 |---------|-----------|
-| 0.2.x   | ✅ Current |
-| < 0.2   | ❌         |
+| 0.3.x   | Current   |
+| 0.2.x   | No        |
+
+## Current Security Boundary (`v0.3.x`)
+
+Primary deployment path:
+
+```bash
+sudo acp start openclaw --openclaw-user=openclaw
+```
+
+Enforced controls in this mode:
+
+1. OpenClaw runs as a non-root Linux user.
+2. ACP applies per-UID nftables egress rules (fail-closed).
+3. Outbound HTTP/HTTPS is mediated through ACP policy + consent gate.
+4. Decisions are written to append-only JSONL audit logs.
 
 ## Known Limitations
 
-These are architectural gaps we're actively working on. They are **not bugs** — they are features that don't exist yet:
+1. **Agent-native tools bypass ACP consent gating.**
+   OpenClaw's built-in tools (`web_search`, `web_fetch`) execute server-side
+   on OpenClaw's infrastructure. ACP's nftables rules and proxy only see the
+   API connection to OpenClaw's backend — individual tool actions (web searches,
+   URL fetches) are invisible to ACP and do not trigger consent requests.
+   This is a fundamental limitation of network-layer enforcement for agents
+   with server-side tool execution.
 
-1. **Network isolation requires root** — Without `sudo`, the `--network-isolation` flag falls back to proxy-only mode. The agent can make direct network requests bypassing ACP.
+2. **Default user-owned config paths are tamperable by runtime user.**
+   By default, ACP config/policy live under `/home/openclaw/.acp`.
+   If OpenClaw user is compromised, policy/config can be modified.
 
-2. **MCP-only interception** — ACP only intercepts MCP tool calls. Agents using direct HTTP, shell commands via `child_process`, or other non-MCP interfaces are not covered.
+3. **Approval channel trust and availability are external dependencies.**
+   If Telegram/webhook paths are unavailable, `ask` flows can block or deny.
 
-3. **Private key stored unencrypted** — The Ed25519 signing key at `~/.acp/keys/private.key` is stored as plaintext hex. An agent running as the same OS user could read it.
+4. **OpenClaw dependency drift on first startup.**
+   `acp start openclaw` installs `openclaw@latest` by default.
+   Native dependency builds may require host toolchain (`build-essential`).
 
-4. **No replay protection** — Consent proofs include a nonce but there is no server-side nonce store to prevent replay. A captured proof could theoretically be reused.
+5. **Host compromise is out of scope.**
+   If root or host OS is compromised, ACP guarantees do not hold.
 
-5. **Consent binds to tool name only** — The consent proof signs the arguments hash, but the human approval UI shows arguments at approval time. There's no enforcement that the arguments haven't changed between display and execution (they can't in the current flow, but the proof doesn't bind to a specific request ID the human saw).
-
-6. **Same-user process model** — The agent runs as the same OS user as ACP. Without network namespaces or containers, the agent could theoretically read ACP's config, keys, and vault.
-
-See [THREAT-MODEL.md](THREAT-MODEL.md) for the full analysis.
+6. **Legacy `acp contain` mode has different assumptions.**
+   `acp contain` remains for compatibility and should not be treated as the
+   primary `v0.3.x` production posture.
 
 ## Reporting a Vulnerability
 
 **Email:** hello@agent2fa.dev
 
-Please include:
-- Description of the issue
-- Steps to reproduce (if applicable)
-- Impact assessment
+Include:
+- issue description
+- reproducible steps
+- impact assessment
 
-We aim to acknowledge reports within 48 hours and provide a fix or mitigation within 7 days for confirmed issues.
-
-**Please do not open public GitHub issues for security vulnerabilities.**
+Please do not open public GitHub issues for security vulnerabilities.
 
 ## Scope
 
-The following are in scope for security reports:
-- Bypasses of the consent gate (getting tool calls through without approval)
-- Cryptographic issues in consent proofs or audit trail
-- Credential vault encryption weaknesses
-- Policy engine bypasses
-- Anything that lets an agent act without human knowledge
+In scope:
+- bypasses of consent gate in VM mode
+- bypasses of nftables egress mediation
+- policy evaluation and enforcement bypasses
+- audit integrity gaps that hide actions
 
-The following are **out of scope** (known limitations listed above):
-- Network isolation requiring root (documented)
-- Non-MCP agent actions (documented)
-- Same-user privilege escalation (documented)
+Out of scope (documented limitations):
+- host/root compromise
+- operator misconfiguration (for example leaving policy writable by runtime user)
+- issues specific only to legacy `acp contain` mode when VM mode is not used

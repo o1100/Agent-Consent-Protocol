@@ -1,235 +1,110 @@
-# Policy Reference
+# Policy Reference (`v0.3.0`)
 
-ACP policies are YAML files that control which tool calls are allowed, which need human approval, and which are blocked.
+ACP policy files are YAML rules that decide agent actions:
 
-## File Location
+- `allow`
+- `ask`
+- `deny`
 
-Active policy: `~/.acp/policy.yml`
+## Policy Location
 
-Apply a policy:
-```bash
-acp policy apply policies/strict.yml
-```
+Default active policy (OpenClaw VM mode):
 
-View current policy:
-```bash
-acp policy show
-```
+- `/home/<openclaw-user>/.acp/policy.yml`
 
-## Schema
+## Schema (VM mode)
 
 ```yaml
-version: "1"                    # Policy format version
-default_action: ask             # What to do when no rule matches
+default: ask
 
 rules:
-  - match:                      # Criteria for matching tool calls
-      tool: "send_*"           # Tool name (glob patterns supported)
-      category: communication   # Action category
-      server: github            # MCP server name
-      args:                     # Argument matching
-        path: "~/safe/**"      # Glob patterns in values
-    action: allow               # What to do: allow, ask, deny
-    level: high                 # Risk level for "ask" actions
-    timeout: 300                # Seconds before auto-deny
-    rate_limit: "20/minute"    # Rate limiting
-    conditions:
-      time_of_day:
-        after: "09:00"
-        before: "17:00"
-        timezone: "UTC"
+  - match:
+      kind: http
+      host: "*.example.com"
+      method: "GET"
+    action: allow
+    timeout: 120
 ```
+
+In VM mode (`acp start openclaw`), policy evaluates outbound HTTP requests hitting ACP's proxy. The `name` and `args` match fields are not used — all enforcement is at the network layer via host/method matching.
+
+### Legacy schema (Docker mode only)
+
+```yaml
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+
+rules:
+  - match:
+      name: "gh"
+      args: "pr list*"
+    action: allow
+```
+
+The `wrap` list and `name`/`args` match fields are only used by `acp contain` (Docker mode), where PATH-based shell wrappers intercept commands before execution.
 
 ## Actions
 
 | Action | Behavior |
 |---|---|
-| `allow` | Forward to MCP server immediately. No human involved. |
-| `ask` | Request human approval. Block until response or timeout. |
-| `deny` | Block immediately. Return error to agent. |
+| `allow` | Execute/forward immediately |
+| `ask` | Request human approval via configured channel |
+| `deny` | Reject immediately |
 
-## Match Criteria
+## Match Fields
 
-### `tool` — Tool Name
+### VM mode (`acp start openclaw`)
 
-Matches the MCP tool name. Supports glob patterns:
-
-```yaml
-# Exact match
-- match: { tool: send_email }
-
-# Prefix match
-- match: { tool: "send_*" }
-
-# Suffix match
-- match: { tool: "*_file" }
-
-# Match everything
-- match: { tool: "*" }
-```
-
-### `category` — Action Category
-
-Built-in categories:
-
-| Category | Examples |
+| Field | Description |
 |---|---|
-| `read` | `read_file`, `web_search`, `get_weather` |
-| `write` | `write_file`, `create_event`, `update_record` |
-| `communication` | `send_email`, `send_sms`, `message_user` |
-| `financial` | `transfer_money`, `charge_card`, `pay_invoice` |
-| `system` | `execute_shell`, `deploy_production`, `delete_database` |
-| `public` | `send_tweet`, `publish_post`, `release_package` |
-| `physical` | `unlock_door`, `toggle_switch` |
+| `kind` | `http` (only relevant kind in VM mode) |
+| `host` | HTTP host match (exact or glob) |
+| `method` | HTTP method match (`GET`, `POST`, etc) |
 
-ACP auto-classifies tools by name pattern. Override with explicit category in the match.
+### Legacy Docker mode (`acp contain`)
 
-### `args` — Argument Matching
-
-Match on tool call arguments:
-
-```yaml
-# Only allow writing to safe directories
-- match:
-    tool: write_file
-    args:
-      path: "~/workspace/**"
-  action: allow
-
-# Block emails to specific domains
-- match:
-    tool: send_email
-    args:
-      to: "*@competitor.com"
-  action: deny
-```
-
-## Risk Levels
-
-When `action: ask`, the `level` field controls the urgency:
-
-| Level | Icon | Meaning |
-|---|---|---|
-| `low` | 🟢 | Low risk, quick approval |
-| `medium` | 🟡 | Moderate risk |
-| `high` | 🔴 | High risk, review carefully |
-| `critical` | ⛔ | Critical, requires careful review |
-
-## Timeout
-
-For `ask` actions, `timeout` specifies seconds before auto-deny:
-
-```yaml
-- match: { category: financial }
-  action: ask
-  level: critical
-  timeout: 300  # 5 minutes to decide, then auto-deny
-```
-
-Default timeout: 120 seconds (configurable in `~/.acp/config.yml`).
-
-## Rate Limiting
-
-Limit how often a tool can be called:
-
-```yaml
-- match: { tool: "*" }
-  rate_limit: "20/minute"   # Max 20 calls per minute
-
-- match: { tool: exec }
-  rate_limit: "5/minute"    # Max 5 shell commands per minute
-```
-
-Supported units: `second`, `minute`, `hour`, `day`.
-
-## Time-of-Day Conditions
-
-Restrict rules to certain hours:
-
-```yaml
-# Only auto-approve reads during business hours
-- match: { category: read }
-  action: allow
-  conditions:
-    time_of_day:
-      after: "09:00"
-      before: "17:00"
-      timezone: "UTC"
-```
-
-Outside the time window, the rule is skipped and the next rule is evaluated.
-
-## Rule Evaluation Order
-
-1. Rules are evaluated **top to bottom**
-2. **First matching rule wins**
-3. If no rule matches, `default_action` applies
-
-This means more specific rules should go before general ones:
-
-```yaml
-rules:
-  # Specific: allow reading workspace files
-  - match: { tool: read_file, args: { path: "~/workspace/**" } }
-    action: allow
-
-  # General: ask for all file reads (catches everything else)
-  - match: { tool: "read_*" }
-    action: ask
-
-  # Catch-all
-  - match: { tool: "*" }
-    action: deny
-```
-
-## Built-in Policies
-
-| File | Description |
+| Field | Description |
 |---|---|
-| `policies/default.yml` | Ask for dangerous, allow reads |
-| `policies/strict.yml` | Ask for everything except reads |
-| `policies/development.yml` | Allow most, ask for dangerous |
+| `name` | Shell command name (exact or glob) |
+| `args` | Shell arguments as a glob pattern |
+| `kind` | `shell` or `http` |
+| `host` | HTTP host match (exact or glob) |
+| `method` | HTTP method match (`GET`, `POST`, etc) |
 
-## Examples
+## Rule Evaluation
 
-### Minimal Policy
+1. Top-to-bottom
+2. First match wins
+3. `default` used when no rule matches
+
+## `wrap` in v0.3.0
+
+`wrap` is **Docker mode only** (`acp contain`). It is ignored by `acp start openclaw`.
+
+In VM mode, there are no shell wrappers. All enforcement is at the network layer: nftables blocks direct egress, and HTTP traffic is routed through ACP's consent proxy where `rules` are evaluated by host/method.
+
+## Built-in Templates
+
+| File | Purpose |
+|---|---|
+| `default.yml` | balanced defaults |
+| `strict.yml` | ask/deny-heavy |
+| `openclaw.yml` | OpenClaw-centric host defaults |
+
+## Example: VM-focused policy
 
 ```yaml
-version: "1"
-default_action: ask
-rules: []
-# Everything requires approval
-```
-
-### Read-Only Agent
-
-```yaml
-version: "1"
-default_action: deny
+default: ask
+wrap: []
 rules:
-  - match: { category: read }
+  - match: { kind: http, host: "api.telegram.org" }
     action: allow
-```
-
-### Production API Agent
-
-```yaml
-version: "1"
-default_action: deny
-
-rules:
-  - match: { category: read }
+  - match: { kind: http, host: "*.anthropic.com" }
     action: allow
-
-  - match: { tool: "api_call", args: { method: "GET" } }
+  - match: { kind: http, host: "api.search.brave.com" }
     action: allow
-
-  - match: { tool: "api_call", args: { method: "POST" } }
-    action: ask
-    level: high
-
-  - match: { tool: "api_call", args: { method: "DELETE" } }
-    action: ask
-    level: critical
-    timeout: 60
 ```

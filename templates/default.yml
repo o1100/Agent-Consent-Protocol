@@ -14,11 +14,21 @@ wrap:
   - rm
   - rmdir
   - python
+  - python3
   - node
   - pip
   - npm
+  - npx
 
 rules:
+  # --- ALLOW: agent runtimes (the agent itself runs through these) ---
+  - match: { name: "node" }
+    action: allow
+  - match: { name: "python" }
+    action: allow
+  - match: { name: "python3" }
+    action: allow
+
   # --- ALLOW: safe read operations ---
   - match: { name: "cat" }
     action: allow

@@ -1,198 +1,156 @@
-# Agent Consent Protocol (ACP) — Specification v0.2
+# Agent Consent Protocol (ACP) — Specification v0.3.0
 
-**Version:** 0.2.0 (Draft)
-**Status:** Draft RFC
+**Version:** 0.3.0
+**Status:** Working prototype
 **License:** Apache 2.0
 
 ## 1. Overview
 
-The Agent Consent Protocol (ACP) is an open standard for human authorization of AI agent actions, implemented as a transparent MCP proxy that sandboxes any agent process.
+The Agent Consent Protocol (ACP) is an open standard for human authorization of AI agent actions. In v0.3.0, ACP enforces consent gating through network-layer mediation on Linux VMs, targeting OpenClaw deployments.
 
 ACP provides:
 
-1. **MCP Proxy** — Sits between agent and real MCP servers, intercepting all tool calls
-2. **Network Isolation** — Agent can only reach the ACP proxy, not the internet
-3. **Credential Vault** — Secrets stored encrypted, injected only after approval
-4. **Consent Gates** — Human approval via Telegram, terminal, or webhook
-5. **Policy Engine** — YAML-based rules: allow, ask, deny, rate-limit
-6. **Cryptographic Proofs** — Ed25519-signed, nonce-bound, time-limited approvals
-7. **Audit Trail** — Hash-chained JSONL, tamper-evident
+1. **HTTP Consent Proxy** — Forward proxy on loopback that gates outbound HTTP/HTTPS
+2. **Network Isolation** — Per-UID nftables egress rules (fail-closed)
+3. **Consent Gates** — Human approval via Telegram, terminal, or webhook
+4. **Policy Engine** — YAML-based rules: allow, ask, deny
+5. **Audit Trail** — Append-only JSONL logging of all consent decisions
 
 ## 2. Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    ACP Process                          │
-│                                                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
-│  │ MCP      │  │ Policy   │  │ Consent  │  │ Cred   │ │
-│  │ Proxy    │──│ Engine   │──│ Gate     │──│ Vault  │ │
-│  │ Server   │  │          │  │          │  │        │ │
-│  └────┬─────┘  └──────────┘  └────┬─────┘  └────┬───┘ │
-│       │                           │              │     │
-│       │                     ┌─────┴─────┐        │     │
-│       │                     │ Channel   │        │     │
-│       │                     │ Adapter   │        │     │
-│       │                     └─────┬─────┘        │     │
-│  ┌────┴─────┐                     │         ┌────┴───┐ │
-│  │ Sandbox  │                     │         │ Audit  │ │
-│  │ Manager  │                     │         │ Logger │ │
-│  └────┬─────┘                     │         └────────┘ │
-│       │                           │                     │
-└───────┼───────────────────────────┼─────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                    ACP (root)                         │
+│                                                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
+│  │ HTTP     │  │ Policy   │  │ Consent  │           │
+│  │ Proxy    │──│ Engine   │──│ Gate     │           │
+│  │ (loopback)  │          │  │          │           │
+│  └────┬─────┘  └──────────┘  └────┬─────┘           │
+│       │                           │                   │
+│       │                     ┌─────┴─────┐            │
+│       │                     │ Channel   │            │
+│       │                     │ Adapter   │            │
+│       │                     └─────┬─────┘            │
+│  ┌────┴─────┐                     │       ┌────────┐ │
+│  │ nftables │                     │       │ Audit  │ │
+│  │ Egress   │                     │       │ Logger │ │
+│  └────┬─────┘                     │       └────────┘ │
+│       │                           │                   │
+└───────┼───────────────────────────┼───────────────────┘
         │                           │
         ▼                           ▼
    ┌─────────┐               ┌───────────┐
    │  Agent  │               │  Human    │
-   │ Process │               │  (Phone/  │
-   │         │               │  Terminal)│
+   │ Process │               │  (Telegram│
+   │ (uid)   │               │  /Terminal)│
    └─────────┘               └───────────┘
 ```
 
-### 2.1 MCP Proxy
+### 2.1 HTTP Consent Proxy
 
-The ACP proxy implements the MCP (Model Context Protocol) interface. The agent connects to it as if it were a normal MCP server. The proxy:
+ACP runs a forward HTTP proxy on `127.0.0.1:<port>`. The agent process is configured to route HTTP/HTTPS traffic through this proxy via environment variables (`HTTP_PROXY`, `HTTPS_PROXY`) and Node.js fetch patching.
 
-- Accepts MCP JSON-RPC connections (stdio or HTTP/SSE)
-- Intercepts `tools/call` requests
-- Forwards `tools/list` with tool metadata
-- Passes through `resources/*` and `prompts/*` unchanged (or with policy checks)
-- Connects to one or more upstream MCP servers to fulfill approved requests
+The proxy:
+
+- Accepts HTTP CONNECT (HTTPS) and direct HTTP requests
+- Builds an action record for each request (host, method, URL)
+- Evaluates the action against the policy engine
+- Forwards approved requests to the internet
+- Rejects denied requests
 
 ### 2.2 Network Isolation Model
 
-The sandbox restricts the agent process's network access:
+v0.3.0 uses per-UID nftables rules on Linux:
 
-| Platform | Method | Isolation Level |
-|---|---|---|
-| Linux (root) | Network namespaces + iptables | Full — only loopback to ACP proxy |
-| Linux (rootless) | LD_PRELOAD socket interception | Partial — software enforcement |
-| Docker | Container networking | Full — agent in isolated network |
-| macOS (root) | pf firewall rules | Full — only loopback to ACP proxy |
-| Fallback | Environment variable only | None — proxy-only mode with warning |
+| Method | Scope |
+|---|---|
+| nftables egress rules (`meta skuid`) | All outbound TCP from the agent's Linux user |
 
-In full isolation mode:
-1. ACP creates a network namespace (or equivalent)
-2. The agent process runs inside the namespace
-3. Only traffic to `127.0.0.1:<acp_port>` is allowed
-4. All other outbound traffic is dropped
-5. DNS is not available inside the sandbox
+The rules:
 
-### 2.3 Credential Vault
+1. Allow TCP to `127.0.0.1:<proxy_port>` (ACP proxy)
+2. Allow UDP/TCP to system DNS servers on port 53
+3. Reject all other outbound traffic from the agent UID
 
-```
-~/.acp/vault.json (encrypted)
-{
-  "version": 1,
-  "encryption": "aes-256-gcm",
-  "salt": "<hex>",
-  "iv": "<hex>",
-  "data": "<encrypted JSON>",
-  "tag": "<hex>"
-}
-```
+This is fail-closed: if ACP is not running, the agent cannot make outbound connections.
 
-The vault stores key-value pairs encrypted with a key derived from the ACP master key (Ed25519 private key → HKDF → AES-256-GCM).
+**Platform scope:** Linux only in v0.3.0. Requires root/sudo for nftables rule installation.
 
-Credentials are:
-- **Never** exposed in the agent's environment
-- **Never** passed on the command line
-- **Only** injected into tool call parameters after human approval
-- **Logged** in the audit trail (key name only, never value)
+### 2.3 Known Gaps
+
+**Agent-native tools bypass ACP.** If the agent has built-in tools that execute server-side (e.g., OpenClaw's `web_search`, `web_fetch`), those actions are invisible to ACP. The local process sends an API call to the agent's backend, and the backend performs the web request. ACP sees the API connection but cannot gate individual tool actions.
+
+This is a fundamental limitation of network-layer enforcement for agents with server-side tool execution.
 
 ### 2.4 Consent Request Flow
 
 ```
-1. Agent calls tools/call via MCP protocol
-2. ACP proxy intercepts the request
-3. Policy engine evaluates:
-   a. "allow" → forward to upstream MCP server immediately
-   b. "deny"  → return error to agent immediately
-   c. "ask"   → proceed to step 4
-4. Consent gate creates a ConsentRequest
+1. Agent process makes outbound HTTP/HTTPS request
+2. Request hits ACP proxy (via env vars + nftables constraint)
+3. Proxy builds action record (kind=http, host, method, url)
+4. Policy engine evaluates:
+   a. "allow" → forward immediately
+   b. "deny"  → reject immediately
+   c. "ask"   → proceed to step 5
 5. Channel adapter delivers to human (Telegram/terminal/webhook)
-6. Human reviews and decides (approve/deny/modify)
-7. If approved:
-   a. Credential vault injects required secrets
-   b. Request forwarded to upstream MCP server
-   c. Response returned to agent
-8. If denied:
-   a. Error response returned to agent
-9. Audit logger records the complete event
+6. Human reviews and decides (approve/deny)
+7. If approved: request forwarded to destination
+8. If denied: connection rejected
+9. Audit logger records the action and verdict
 ```
+
+Failures in the consent path default to deny.
 
 ## 3. Terminology
 
 | Term | Definition |
 |---|---|
-| **Agent** | Any process that makes MCP tool calls |
-| **ACP Proxy** | MCP-compatible server that intercepts and gates tool calls |
-| **Sandbox** | Network-isolated environment the agent runs in |
-| **Credential Vault** | Encrypted store of secrets, managed by ACP |
-| **Consent Gate** | Logic that determines if human approval is needed |
-| **Channel Adapter** | Interface to deliver consent requests (Telegram, terminal, etc.) |
+| **Agent** | Any process running as the constrained Linux user |
+| **Consent Gate** | `(action: Action) => Promise<Verdict>` — the decision function |
 | **Policy** | YAML rules that control consent behavior |
+| **Channel** | Interface to deliver consent requests (Telegram, terminal, webhook) |
 | **Approver** | Human who reviews and approves/denies requests |
-| **Consent Proof** | Ed25519-signed attestation of a human's decision |
+| **Verdict** | The gate's decision: `allow` or `deny`, with a reason string |
+| **Action** | Description of what the agent wants to do (kind, host, method) |
 
-## 4. Message Types
+## 4. Core Types
 
-### 4.1 Consent Request
+### 4.1 Action
 
-```json
-{
-  "type": "consent_request",
-  "version": "0.2.0",
-  "id": "cr_<unique_id>",
-  "timestamp": "ISO-8601",
-  "expires_at": "ISO-8601",
-  "agent": {
-    "id": "string",
-    "name": "string",
-    "command": "string"
-  },
-  "action": {
-    "tool": "string",
-    "server": "string",
-    "category": "string",
-    "risk_level": "low | medium | high | critical",
-    "parameters": {},
-    "description": "string"
-  },
-  "policy": {
-    "rule_id": "string",
-    "rule_name": "string",
-    "required_level": "string"
-  },
-  "nonce": "n_<uuid>"
+```typescript
+type ActionKind = 'shell' | 'http';
+
+interface Action {
+  name: string;
+  args?: string;
+  meta: {
+    kind: ActionKind;
+    host?: string;
+    method?: string;
+    port?: number;
+  };
 }
 ```
 
-### 4.2 Consent Response
+In VM mode, most actions are `kind: http`. The `shell` kind is used in legacy Docker mode only.
 
-```json
-{
-  "type": "consent_response",
-  "version": "0.2.0",
-  "request_id": "cr_<id>",
-  "timestamp": "ISO-8601",
-  "decision": "approved | denied | approved_with_modifications",
-  "approver": {
-    "id": "string",
-    "channel": "telegram | terminal | webhook"
-  },
-  "modifications": {} | null,
-  "conditions": {
-    "valid_until": "ISO-8601",
-    "single_use": true
-  },
-  "nonce": "n_<uuid>",
-  "proof": {
-    "algorithm": "Ed25519",
-    "public_key": "hex",
-    "signature": "hex",
-    "signed_payload_hash": "sha256:<hex>"
-  }
+### 4.2 Verdict
+
+```typescript
+interface Verdict {
+  decision: 'allow' | 'deny';
+  reason: string;
+}
+```
+
+### 4.3 Audit Entry
+
+```typescript
+interface AuditEntry {
+  timestamp: string;   // ISO-8601
+  action: Action;
+  verdict: Verdict;
 }
 ```
 
@@ -201,201 +159,119 @@ Credentials are:
 ### 5.1 Policy File Format
 
 ```yaml
-version: "1"
-default_action: ask | allow | deny
+default: ask
 
 rules:
   - match:
-      tool: "string | glob"        # Tool name or pattern
-      category: "string"           # Action category
-      server: "string"             # MCP server name
-      args:                        # Argument matching
-        key: "value | glob"
-    action: allow | ask | deny
-    level: low | medium | high | critical  # For "ask" actions
-    timeout: 300                   # Seconds before auto-deny
-    rate_limit: "20/minute"        # Rate limiting
-    conditions:
-      time_of_day:
-        after: "09:00"
-        before: "17:00"
-        timezone: "UTC"
+      kind: http
+      host: "*.example.com"
+      method: "GET"
+    action: allow
+    timeout: 120
 ```
 
-### 5.2 Rule Evaluation
+### 5.2 Match Fields (VM mode)
 
-1. Rules are evaluated in order (top to bottom)
-2. First matching rule wins
-3. If no rule matches, `default_action` applies
-4. Rate limits are checked after rule matching
+| Field | Type | Description |
+|---|---|---|
+| `kind` | string | `http` (primary in VM mode) |
+| `host` | string/glob | HTTP host (e.g., `"*.anthropic.com"`) |
+| `method` | string | HTTP method (`GET`, `POST`, etc.) |
 
-### 5.3 Match Criteria
+Legacy Docker mode also supports `name` (command name) and `args` (argument glob).
 
-- `tool`: Exact name or glob pattern (`send_*`, `*_email`, `*`)
-- `category`: One of `read`, `write`, `communication`, `financial`, `system`, `public`, `physical`
-- `server`: Name of the upstream MCP server
-- `args`: Key-value pairs that must match in the tool call parameters (supports glob values)
-
-### 5.4 Actions
+### 5.3 Actions
 
 | Action | Behavior |
 |---|---|
 | `allow` | Forward immediately, no consent needed |
 | `ask` | Request human approval via configured channel |
-| `deny` | Block immediately, return error to agent |
+| `deny` | Block immediately |
 
-### 5.5 Built-in Classifications
+### 5.4 Rule Evaluation
 
-ACP auto-classifies common tool names:
+1. Rules are evaluated in order (top to bottom)
+2. First matching rule wins
+3. If no rule matches, `default` action applies
+4. Glob matching: `*` matches any characters, `?` matches one character
 
-| Pattern | Category | Default Risk |
-|---|---|---|
-| `read_*`, `get_*`, `list_*`, `search_*` | read | low |
-| `write_*`, `create_*`, `update_*` | write | medium |
-| `send_*`, `email_*`, `message_*` | communication | high |
-| `delete_*`, `remove_*`, `drop_*` | system | high |
-| `deploy_*`, `exec*`, `shell_*` | system | high |
-| `transfer_*`, `pay_*`, `charge_*` | financial | critical |
-| `publish_*`, `post_*`, `tweet_*` | public | high |
+### 5.5 Host Approval Cache
 
-## 6. Cryptographic Proofs
+When a human approves an HTTP request, ACP caches the host approval for a short TTL (default 180 seconds, configurable via `ACP_HTTP_HOST_APPROVAL_TTL_SEC`). The `www.` twin is also cached (e.g., approving `example.com` also caches `www.example.com`).
 
-### 6.1 Key Generation
+## 6. Audit Trail
 
-ACP generates an Ed25519 key pair during `acp init`:
-- Private key stored in `~/.acp/keys/private.key` (encrypted)
-- Public key stored in `~/.acp/keys/public.key`
+### 6.1 Format
 
-### 6.2 Signing Payload
+Append-only JSONL (one JSON object per line), stored at `~/.acp/audit.jsonl`.
 
-The signed payload is a canonical JSON object with sorted keys:
+### 6.2 Entry Schema
 
 ```json
 {
-  "action_hash": "sha256:<hash of action parameters>",
-  "decision": "approved",
-  "modifications_hash": null,
-  "nonce": "n_<uuid>",
-  "request_id": "cr_<id>",
-  "timestamp": "ISO-8601",
-  "valid_until": "ISO-8601"
+  "timestamp": "2026-01-15T10:30:00.000Z",
+  "action": {
+    "name": "CONNECT",
+    "meta": {
+      "kind": "http",
+      "host": "api.example.com",
+      "method": "CONNECT",
+      "port": 443
+    }
+  },
+  "verdict": {
+    "decision": "allow",
+    "reason": "Approved by human"
+  }
 }
 ```
 
-### 6.3 Verification
+No hash chaining or cryptographic proofs in v0.3.0. The audit log is a simple append-only JSONL file.
 
-1. Reconstruct canonical payload from consent response
-2. Compute SHA-256 hash
-3. Verify Ed25519 signature against trusted public key
-4. Verify nonce matches original request
-5. Check expiration time
+## 7. Configuration
 
-## 7. Audit Trail
-
-### 7.1 Format
-
-JSONL (one JSON object per line), stored at `~/.acp/audit.jsonl`.
-
-### 7.2 Hash Chaining
-
-Each event includes:
-- `previous_event_hash`: SHA-256 hash of the previous event
-- `event_hash`: SHA-256 hash of the current event (excluding this field)
-
-Tampering with any event breaks the chain from that point forward.
-
-### 7.3 Event Types
-
-| Event | Description |
-|---|---|
-| `tool_call_intercepted` | Agent made a tool call |
-| `policy_evaluated` | Policy engine made a decision |
-| `consent_requested` | Human approval requested |
-| `consent_approved` | Human approved |
-| `consent_denied` | Human denied |
-| `consent_expired` | Request timed out |
-| `tool_call_forwarded` | Request sent to upstream MCP server |
-| `tool_call_completed` | Upstream response received |
-| `credential_injected` | Vault credential used (key name only) |
-
-### 7.4 Event Schema
-
-```json
-{
-  "type": "audit_event",
-  "version": "0.2.0",
-  "id": "ae_<unique>",
-  "timestamp": "ISO-8601",
-  "event_type": "string",
-  "request_id": "cr_<id>",
-  "agent": "string",
-  "tool": "string",
-  "category": "string",
-  "risk_level": "string",
-  "decision": "string",
-  "response_time_ms": 0,
-  "policy_rule": "string",
-  "metadata": {},
-  "previous_event_hash": "sha256:<hex> | null",
-  "event_hash": "sha256:<hex>"
-}
-```
-
-## 8. Configuration
-
-### 8.1 Config File
+### 7.1 Config File
 
 Stored at `~/.acp/config.yml`:
 
 ```yaml
-version: "1"
-channel: telegram | prompt | webhook
+channel: telegram
 
 telegram:
-  bot_token: "encrypted:<...>"
-  chat_id: "123456789"
-
-webhook:
-  url: "https://example.com/acp/callback"
-  secret: "encrypted:<...>"
-
-proxy:
-  port: 8443
-  upstream_servers:
-    - name: "default"
-      command: "npx @modelcontextprotocol/server-filesystem /tmp"
-    - name: "github"
-      url: "http://localhost:3001"
-
-defaults:
-  timeout_seconds: 120
-  policy: "~/.acp/policy.yml"
+  bot_token: "<token>"
+  chat_id: "<chat_id>"
 ```
 
-## 9. Security Requirements
+### 7.2 Data Locations
 
-1. **Process isolation**: ACP proxy MUST run as a separate process from the agent
-2. **Network enforcement**: Agent SHOULD be network-isolated (MUST warn if not)
-3. **Credential separation**: Agent MUST NOT have access to vault contents
-4. **Nonce binding**: Approvals MUST be nonce-bound (no replay)
-5. **Time limits**: Approvals MUST be time-limited
-6. **Append-only audit**: Audit trail MUST be append-only and hash-chained
-7. **Out-of-band channel**: Approval channel MUST be unreachable by the agent
-8. **Key isolation**: Agent MUST NOT have access to signing keys
+Default paths when running `--openclaw-user=openclaw`:
 
-## 10. Transport
+| Path | Purpose |
+|---|---|
+| `/home/openclaw/.acp/config.yml` | ACP config |
+| `/home/openclaw/.acp/policy.yml` | Policy rules |
+| `/home/openclaw/.acp/audit.jsonl` | Audit log |
 
-### 10.1 Agent ↔ ACP Proxy
+## 8. Security Requirements
 
-The ACP proxy accepts MCP connections via:
-- **stdio**: ACP spawns the agent, piping stdin/stdout as MCP JSON-RPC
-- **HTTP/SSE**: ACP listens on a local port, agent connects via HTTP
+1. **Process separation**: ACP MUST run as root; agent MUST run as non-root user
+2. **Network enforcement**: Agent UID outbound TCP MUST be restricted to ACP proxy via nftables
+3. **Fail-closed**: Default decision path MUST deny on failure
+4. **Out-of-band channel**: Approval channel MUST be unreachable by the agent process
+5. **Append-only audit**: All consent decisions MUST be logged
 
-### 10.2 ACP Proxy ↔ Upstream MCP Servers
+### 8.1 Not Implemented in v0.3.0
 
-ACP connects to real MCP servers via:
-- **stdio**: ACP spawns the MCP server process
-- **HTTP/SSE**: ACP connects to a running MCP server URL
+The following were described in earlier spec drafts but are **not part of v0.3.0**:
+
+- Credential vault (encrypted secret storage)
+- Cryptographic proofs (Ed25519-signed approvals)
+- Hash-chained audit trail
+- MCP protocol interception
+- Cross-platform support (macOS, Windows)
+- Rate limiting
+- Risk level classifications
+- Nonce-bound approvals
 
 ---
 

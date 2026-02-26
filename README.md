@@ -1,15 +1,14 @@
 <div align="center">
 
-# 🔐 Agent Consent Protocol (ACP)
+# Agent Consent Protocol (ACP)
 
-### MCP is how agents use tools. ACP is how humans control agents.
+### Human authorization for AI agents
 
-**One command. Any agent. Human-controlled.**
+**v0.3.0: Linux VM-first consent gating for OpenClaw**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![npm: agent-2fa](https://img.shields.io/npm/v/agent-2fa.svg)](https://www.npmjs.com/package/agent-2fa)
 [![Node.js CI](https://github.com/o1100/Agent-Consent-Protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/o1100/Agent-Consent-Protocol/actions)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Website](https://agent2fa.dev) · [Spec](SPEC.md) · [Docs](docs/) · [Contributing](CONTRIBUTING.md)
 
@@ -18,293 +17,157 @@
 ---
 
 > [!WARNING]
-> **Experimental prototype (v0.2) — not production hardened.**
-> ACP is an early research implementation. It works, it's tested, and the concept is sound — but it has not undergone formal security review and has known limitations. Read the [Current State](#current-state) section before using it. See [SECURITY.md](SECURITY.md) and [THREAT-MODEL.md](THREAT-MODEL.md) for the full picture.
+> Experimental prototype (`v0.3.0`). ACP is functional but not formally audited.
+> Use it for controlled environments, not high-assurance production security.
 
----
+## What v0.3.0 Is
 
-## The Problem
+`v0.3.0` is optimized for one target: **OpenClaw running on Linux cloud VMs**.
 
-AI agents can send emails, run shell commands, transfer money, and deploy to production — but there's no universal way to ensure a human said "yes" first.
+Primary flow:
+1. Get your agent to follow OPENCLAW-INSTALL.md
 
-Every framework has its own half-baked human-in-the-loop: LangGraph interrupts, CrewAI's `human_input` flag, AutoGen's `HumanProxyAgent`. They're all:
+**OR**
+1. `acp init --channel=telegram` (as the OpenClaw runtime user)
+2. `sudo acp start openclaw --openclaw-user=openclaw`
 
-- **Framework-specific** — only works in that one ecosystem
-- **Software-level** — runs inside the agent's process, so the agent can bypass it
-- **No proof** — no cryptographic evidence that a human actually approved
-- **No audit trail** — nothing tamper-evident for compliance or debugging
+At runtime ACP:
 
-## The Solution
+- Runs a local consent-gated HTTP proxy on loopback
+- Applies fail-closed nftables egress rules for the OpenClaw Linux user
+- Requires human approval for policy-matched outbound HTTP/HTTPS actions
+- Writes append-only JSONL audit records
 
-ACP wraps any agent process in a consent-enforced proxy. Sensitive MCP tool calls require human approval. The agent never touches your credentials.
+## Quick Start (Linux VM)
+
+> Minimum: **2 GB RAM+swap** recommended. If your VM has less, add swap first:
+> ```bash
+> sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+> sudo mkswap /swapfile && sudo swapon /swapfile
+> ```
+
+```bash
+# 0) One-time host prerequisites
+sudo apt-get update -y
+sudo apt-get install -y nftables build-essential
+
+# 1) Install ACP
+npm install -g agent-2fa
+
+# 2) Create runtime user once (if missing)
+sudo useradd -m -s /bin/bash openclaw || true
+
+# 3) Configure consent + OpenClaw config as that user
+sudo -u openclaw -H acp init --channel=telegram
+
+# 4) Start ACP + OpenClaw VM mode
+sudo acp start openclaw --openclaw-user=openclaw
+```
+
+Full guide: [examples/openclaw/README.md](examples/openclaw/README.md)
+
+Note: `build-essential` is required because `openclaw@latest` may compile native dependencies during first startup.
+
+## Security Model (Current)
+
+`v0.3.0` enforces **network mediation**, not full host immutability:
+
+- OpenClaw runs as a non-root Linux user
+- nftables blocks direct outbound egress from that user
+- only loopback proxy path is allowed for TCP egress
+- default decision path is fail-closed
+
+Important current limitations:
+
+- **Agent-native tools bypass ACP.** OpenClaw's built-in tools (`web_search`, `web_fetch`) execute server-side on OpenClaw's infrastructure. ACP sees the API connection but cannot gate individual tool actions. The agent can search/fetch the web without triggering a consent request.
+- If ACP config/policy lives in `/home/openclaw/.acp`, OpenClaw can modify it.
+- ACP binaries installed under root-owned paths are not writable by OpenClaw.
+
+Recommended hardening for stricter deployments:
+
+- Store ACP policy/config in root-owned locations (`/etc/acp`)
+- Store state/logs under root-owned paths (`/var/lib/acp`, `/var/log/acp`)
+- Run ACP as a root-owned systemd unit
+
+## Legacy Mode (`acp contain`)
+
+`acp contain -- <command>` remains available as a compatibility mode for generic agents and Docker-based workflows.
+
+It is no longer the primary path for `v0.3.0` OpenClaw VM deployments.
+
+## Install Options
+
+### npm
 
 ```bash
 npm install -g agent-2fa
-acp init
-acp run -- python my_agent.py
+acp --version
 ```
 
-```
-┌─────────────────────────────────────────────────────┐
-│  🔐 ACP Consent Request                            │
-│                                                     │
-│  Action:  send_email                                │
-│  Risk:    🔴 HIGH                                   │
-│                                                     │
-│  To:      boss@company.com                          │
-│  Subject: "Quarterly Report"                        │
-│                                                     │
-│  [✅ Approve]  [❌ Deny]                             │
-└─────────────────────────────────────────────────────┘
-```
-
-The agent doesn't know ACP exists. It thinks it's talking to a normal MCP server.
-
----
-
-## Current State
-
-**Be clear about what this is and isn't.** ACP is a working prototype that demonstrates a real concept. Here's exactly where it stands today:
-
-### ✅ What Works Now
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| MCP tool call interception | **Working** | All MCP `tools/call` requests routed through consent gate |
-| Human approval via Telegram | **Working** | Inline Approve/Deny buttons, real-time |
-| Human approval via terminal | **Working** | Interactive prompt for local dev |
-| YAML policy engine | **Working** | allow/ask/deny rules with glob matching, rate limits |
-| Credential vault | **Working** | AES-256-GCM encrypted, injected only after approval |
-| Ed25519 signed consent proofs | **Working** | Every decision cryptographically signed |
-| Hash-chained audit trail | **Working** | Tamper-evident JSONL log |
-| Works with any agent/language | **Working** | Wraps any process — Python, Node, Go, whatever |
-| 56 tests passing, CI green | **Working** | Automated on Node 20 + 22 |
-
-### ⚠️ What Doesn't Work Yet
-
-| Limitation | Impact | Planned Fix |
-|-----------|--------|-------------|
-| **MCP-only** | Agents using direct HTTP, shell `exec()`, or non-MCP interfaces bypass ACP entirely | Network isolation + broader interception |
-| **Network isolation needs root/Docker** | Without `sudo` or Docker, there's no network enforcement — agent can make direct requests | Rootless isolation (LD_PRELOAD, eBPF) |
-| **Same OS user** | Agent runs as same user as ACP — could read config, keys, vault files | Container isolation, separate user |
-| **Private key unencrypted** | Ed25519 key stored as plaintext at `~/.acp/keys/` | Encrypt at rest with passphrase |
-| **No replay protection** | Consent proofs have nonces but no server-side nonce store | Nonce persistence + TTL |
-| **HTTP proxy is a stub** | Non-MCP HTTP interception returns 501 | Full HTTP MITM proxy |
-
-### 🔑 The Key Limitation
-
-**ACP only intercepts MCP tool calls.** If your agent uses MCP for all its tools (which is increasingly common), ACP catches everything. If your agent also makes direct HTTP requests, runs shell commands outside MCP, or uses framework-native tools — those actions bypass ACP completely.
-
-This means:
-- ✅ **Use ACP** when your agent's dangerous actions go through MCP servers
-- ✅ **Use ACP** as an additional safety layer alongside other controls
-- ❌ **Don't rely on ACP alone** if your agent has unrestricted shell/network access
-- ❌ **Don't treat this as a security boundary** without network isolation enabled
-
----
-
-## How It Works
-
-```
-Agent  →  ACP Proxy  →  Policy Engine  →  Human Approval  →  Real MCP Server
-                              ↓
-                    📱 Telegram / Terminal
-```
-
-**Enforcement layers:**
-
-1. **MCP Proxy** — All MCP tool calls intercepted. Policy engine decides: allow, ask, or deny. This is the core of ACP and it works today.
-2. **Credential Isolation** — API keys stored in ACP's encrypted vault (AES-256-GCM). Injected only after human approval. Agent never sees raw credentials.
-3. **Network Isolation** *(optional, requires root/Docker)* — Restricts agent to only reach the ACP proxy. Without this, enforcement depends on the agent routing through MCP. See [Network Isolation docs](docs/network-isolation.md).
-
-**Cryptographic guarantees:**
-
-- Every consent decision is signed with Ed25519 keys
-- Hash-chained JSONL audit trail (tamper-evident)
-- Canonical JSON serialization for deterministic signing
-
----
-
-## Install
+### From source
 
 ```bash
-# npm
-npm install -g agent-2fa
-
-# Or run directly
-npx agent-2fa init
-npx agent-2fa run -- python my_agent.py
-
-# Or from source
-git clone https://github.com/o1100/Agent-Consent-Protocol.git
+git clone --branch v0.3.0 https://github.com/o1100/Agent-Consent-Protocol.git
 cd Agent-Consent-Protocol/cli
-npm install && npm run build
-node dist/index.js --help
+npm install
+npm run build
+sudo npm link
+acp --version
 ```
 
----
-
-## Quick Start
-
-### Level 1 — Terminal Prompts (30 seconds)
+### Ubuntu/Debian helper script
 
 ```bash
-acp init --channel=prompt
-acp run -- python my_agent.py
+curl -fsSL https://raw.githubusercontent.com/o1100/Agent-Consent-Protocol/v0.3.0/install.sh | bash
 ```
-
-Every MCP tool call pops a terminal prompt. Good for testing.
-
-### Level 2 — Mobile Approvals (2 minutes)
-
-```bash
-acp init --channel=telegram
-acp secret set OPENAI_API_KEY=sk-...
-acp run -- node my_agent.js
-```
-
-Tool calls appear on your phone. Approve or deny with one tap.
-
-### Level 3 — With Network Isolation (requires root)
-
-```bash
-acp policy apply policies/strict.yml
-acp secret set STRIPE_KEY=sk_live_...
-sudo acp run --network-isolation -- python production_agent.py
-```
-
-Agent can only talk to ACP proxy. Everything else is dropped.
-
----
-
-## Policy Engine
-
-```yaml
-version: "1"
-default_action: ask
-
-rules:
-  - match: { category: read }
-    action: allow
-
-  - match: { tool: exec }
-    action: ask
-    level: high
-
-  - match: { category: financial }
-    action: ask
-    level: critical
-    timeout: 300
-
-  - match: { tool: "*" }
-    rate_limit: 20/minute
-```
-
-Three built-in policies: `default.yml`, `strict.yml`, `development.yml`. See [Policy Reference](docs/policy-reference.md).
-
----
-
-## Credential Vault
-
-Secrets encrypted at rest (AES-256-GCM, key derived from Ed25519 private key via HKDF). Never exposed to the agent process.
-
-```bash
-acp secret set OPENAI_API_KEY=sk-...
-acp secret list
-acp secret remove OPENAI_API_KEY
-```
-
----
-
-## Comparison
-
-| Feature | ACP (v0.2) | LangGraph | CrewAI |
-|---|:---:|:---:|:---:|
-| Works with any agent/language | ✅ | ❌ | ❌ |
-| Intercepts MCP tool calls | ✅ | ❌ | ❌ |
-| Intercepts non-MCP actions | ❌ | Partial | Partial |
-| Network-level enforcement | Root/Docker only | ❌ | ❌ |
-| Credential isolation | ✅ | ❌ | ❌ |
-| Mobile approval (Telegram) | ✅ | ❌ | ❌ |
-| Signed consent proofs | ✅ | ❌ | ❌ |
-| Tamper-evident audit trail | ✅ | ❌ | ❌ |
-| Zero code changes to agent | ✅ | ❌ | ❌ |
-| Agent can bypass (MCP calls) | No | Yes | Yes |
-| Agent can bypass (non-MCP) | Yes | Yes | Yes |
-
----
-
-## Works With Everything
-
-```bash
-acp run -- openclaw gateway        # OpenClaw
-acp run -- python my_agent.py      # Python
-acp run -- node agent.js           # Node.js
-acp run -- ./my-go-agent           # Go
-acp run -- java -jar agent.jar     # Java
-```
-
-**Caveat:** ACP only intercepts MCP tool calls. If your agent makes direct API calls or runs shell commands outside of MCP, those won't go through ACP. See [Current State](#current-state).
-
----
-
-## Roadmap
-
-ACP is at the **concept + working CLI** stage. Here's where it's heading:
-
-| Phase | Status | What |
-|-------|--------|------|
-| **v0.2 — Current** | ✅ Released | MCP proxy, consent gate, policy engine, Telegram, vault, audit trail |
-| **v0.3 — Hardening** | 🔄 Next | Replay protection, consent binding to args, encrypted private keys, default-deny unknown tools |
-| **v0.4 — Broader Interception** | Planned | HTTP MITM proxy, shell command interception, rootless network isolation |
-| **v0.5 — Ecosystem** | Planned | Slack/Discord channels, web dashboard, importable library (not just CLI) |
-| **v1.0 — Production** | Planned | Formal security audit, stable API, container-first deployment |
-
-See [THREAT-MODEL.md](THREAT-MODEL.md) for the detailed gap analysis.
-
----
 
 ## CLI Reference
 
+```text
+acp init [--channel=prompt|telegram|webhook]
+    --config=DIR
+
+acp start <preset>
+    --openclaw-user=USER
+    --workspace=DIR
+    --http-proxy-port=PORT
+    --config=DIR
+
+acp contain [options] -- CMD   (legacy compatibility mode)
+    --channel=TYPE
+    --policy=FILE
+    --image=IMAGE
+    --workspace=PATH
+    --interactive
+    --writable
+    --env=KEY
+    --config=DIR
+    --consent-port=PORT
+    --http-proxy-port=PORT
 ```
-acp init [--channel=prompt|telegram|webhook]    Setup wizard
-acp run [--network-isolation] [--policy] -- CMD Run agent in sandbox
-acp secret set|list|remove                      Credential vault
-acp policy apply|show                           Policy management
-acp status                                      Show status
-```
 
----
+## What Changed From v0.2
 
-## Testing
-
-```bash
-cd cli
-npm install
-npm test    # 56 tests
-```
-
----
+See: [CHANGELOG.md](CHANGELOG.md)
 
 ## Documentation
 
 - [How It Works](docs/how-it-works.md)
+- [Integration Guide](docs/integration-guide.md)
 - [Network Isolation](docs/network-isolation.md)
 - [Policy Reference](docs/policy-reference.md)
-- [Integration Guide](docs/integration-guide.md)
+- [Design: v0.3.0 VM OpenClaw](docs/DESIGN-v0.3.0-vm-openclaw.md)
+- [Install Standard: v0.3.0 VM OpenClaw](docs/INSTALL-v0.3.0-vm-openclaw.md)
+- [OpenClaw Install Guide](OPENCLAW-INSTALL.md)
+- [v0.2 to v0.3.0 Delta](CHANGELOG.md)
+- [Release Readiness: v0.3.0](docs/RELEASE-READINESS-v0.3.0.md)
 - [Protocol Spec](SPEC.md)
 - [Security Policy](SECURITY.md)
 - [Threat Model](THREAT-MODEL.md)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). We especially need help with:
-
-- 🐧 Rootless network isolation (LD_PRELOAD, eBPF, seccomp)
-- 🌐 HTTP proxy interception (non-MCP traffic)
-- 🔌 Channel adapters (Slack, Discord, Signal, web dashboard)
-- 🧪 Security review and threat modelling
-- 📖 Documentation and tutorials
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
@@ -315,7 +178,5 @@ Apache 2.0 — see [LICENSE](LICENSE).
 <div align="center">
 
 **Agents use tools. Humans authorize them.**
-
-[⭐ Star on GitHub](https://github.com/o1100/Agent-Consent-Protocol) · [🌐 Website](https://agent2fa.dev)
 
 </div>

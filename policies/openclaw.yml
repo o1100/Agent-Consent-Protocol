@@ -1,0 +1,70 @@
+# ACP Policy Preset — OpenClaw
+#
+# For OpenClaw bots running in contained mode.
+# Allows Telegram API (required for bot operation) and LLM providers.
+# All other network traffic and shell commands need approval.
+
+default: ask
+
+wrap:
+  - gh
+  - git
+  - curl
+  - wget
+  - ssh
+  - rm
+  - rmdir
+  - python
+  - python3
+  - node
+  - pip
+  - npm
+
+rules:
+  # --- ALLOW: Telegram (required for bot operation) ---
+  - match: { kind: http, host: "api.telegram.org" }
+    action: allow
+  - match: { kind: http, host: "*.telegram.org" }
+    action: allow
+
+  # --- ALLOW: LLM providers ---
+  - match: { kind: http, host: "*.anthropic.com" }
+    action: allow
+  - match: { kind: http, host: "*.openai.com" }
+    action: allow
+
+  # --- ALLOW: common safe APIs ---
+  - match: { kind: http, host: "*.googleapis.com" }
+    action: allow
+  - match: { kind: http, host: "api.github.com" }
+    action: allow
+  - match: { kind: http, host: "api.search.brave.com" }
+    action: allow
+
+  # --- ALLOW: safe read operations ---
+  - match: { name: "cat" }
+    action: allow
+  - match: { name: "ls" }
+    action: allow
+  - match: { name: "git", args: "status*" }
+    action: allow
+  - match: { name: "git", args: "log*" }
+    action: allow
+  - match: { name: "git", args: "diff*" }
+    action: allow
+
+  # --- ASK: payment domains ---
+  - match: { kind: http, host: "*.stripe.com" }
+    action: ask
+    timeout: 120
+  - match: { kind: http, host: "*.paypal.com" }
+    action: ask
+    timeout: 120
+
+  # --- DENY: destructive patterns ---
+  - match: { name: "rm", args: "-rf /*" }
+    action: deny
+  - match: { name: "rm", args: "-rf /" }
+    action: deny
+
+  # Everything else falls through to default: ask

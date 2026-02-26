@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ACP — Agent Consent Protocol | 2FA for AI Agents</title>
-  <meta name="description" content="One command. Any agent. Human-controlled. ACP is the universal human-in-the-loop approval layer for AI agents.">
-  <meta property="og:title" content="ACP — 2FA for AI Agents">
-  <meta property="og:description" content="One command. Any agent. Human-controlled. The universal human approval layer for AI agents.">
+  <title>ACP v0.3.0 — Agent Consent Protocol</title>
+  <meta name="description" content="ACP v0.3.0 is a Linux VM-first consent gate for OpenClaw with fail-closed egress mediation.">
+  <meta property="og:title" content="ACP v0.3.0">
+  <meta property="og:description" content="Linux VM-first consent gating for OpenClaw.">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://agent2fa.dev/og-image.png">
   <meta property="og:url" content="https://agent2fa.dev">
   <meta name="twitter:image" content="https://agent2fa.dev/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>A</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -20,20 +20,18 @@
 </head>
 <body>
 
-<!-- ==================== NAV ==================== -->
 <nav>
   <div class="nav-inner">
     <a href="#" class="nav-logo">
       <span class="logo-icon">A</span>
-      ACP
+      ACP v0.3.0
     </a>
     <div class="nav-links">
-      <a href="#problem">Problem</a>
-      <a href="#how-it-works">How It Works</a>
-      <a href="#comparison">Compare</a>
+      <a href="#overview">Overview</a>
+      <a href="#architecture">Architecture</a>
       <a href="#setup">Setup</a>
-      <a href="#agent-prompt">Agent Prompt</a>
-      <a href="https://github.com/o1100/Agent-Consent-Protocol" class="nav-cta" target="_blank">GitHub ↗</a>
+      <a href="#delta">v0.2 Delta</a>
+      <a href="https://github.com/o1100/Agent-Consent-Protocol" class="nav-cta" target="_blank" rel="noreferrer">GitHub ↗</a>
     </div>
     <button class="nav-hamburger" aria-label="Menu">
       <span></span><span></span><span></span>
@@ -41,16 +39,15 @@
   </div>
 </nav>
 
-<!-- ==================== HERO ==================== -->
-<section class="hero section" id="hero">
+<section class="hero section" id="overview">
   <div class="container">
     <div class="hero-badge">
       <span class="dot"></span>
-      Open Source · Apache 2.0
+      Current release: v0.3.0
     </div>
-    <h1><span class="gradient-text">2FA for AI Agents</span></h1>
-    <p class="hero-subtitle">One command. Any agent. Human-controlled.</p>
-    <p class="hero-tagline"><strong>MCP</strong> is how agents use tools. <strong>ACP</strong> is how humans control agents.</p>
+    <h1><span class="gradient-text">Consent gating for OpenClaw on Linux VMs</span></h1>
+    <p class="hero-subtitle">Simpler architecture. Fail-closed egress. External approval.</p>
+    <p class="hero-tagline">MCP is how agents use tools. ACP is how humans control agents.</p>
 
     <div class="terminal">
       <div class="terminal-header">
@@ -61,259 +58,76 @@
       </div>
       <div class="terminal-body">
         <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">npm install</span> <span class="flag">-g</span> <span class="cmd">agent-2fa</span></div>
-        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp init</span> <span class="flag">--channel=telegram</span></div>
-        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">acp run</span> <span class="flag">--</span> <span class="cmd">openclaw gateway</span></div>
-        <div class="terminal-line"><span class="comment"># ✓ Agent wrapped. Approval required for sensitive actions.</span></div>
+        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">sudo -u openclaw -H acp init</span> <span class="flag">--channel=telegram</span></div>
+        <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">sudo acp start openclaw</span> <span class="flag">--openclaw-user=openclaw</span></div>
+        <div class="terminal-line"><span class="comment"># ACP mediates outbound traffic and prompts for consent.</span></div>
       </div>
     </div>
 
     <div class="cta-group">
-      <a href="#setup" class="btn btn-primary">
-        Get Started
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-      </a>
-      <a href="https://github.com/o1100/Agent-Consent-Protocol" target="_blank" class="btn btn-secondary">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-        View on GitHub
-      </a>
+      <a href="#setup" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/README.md" target="_blank" rel="noreferrer" class="btn btn-secondary">Read README</a>
     </div>
   </div>
 </section>
 
-<!-- ==================== PROBLEM ==================== -->
-<section class="section" id="problem">
-  <div class="container">
-    <div class="problem-content fade-in">
-      <span class="section-label">The Problem</span>
-      <h2 class="section-title">Agents have <span class="gradient-text">unlimited power</span></h2>
-      <p class="lead">
-        AI agents can send emails, run shell commands, transfer money, and deploy to production — but there's <strong>no universal way to ensure a human said "yes" first.</strong>
-      </p>
-      <p class="section-desc" style="margin-bottom: 8px;">
-        Every agent framework has its own half-baked "human-in-the-loop" that the agent can bypass. Give an agent shell access, and it has the same power as root.
-      </p>
-    </div>
-
-    <div class="risk-cards fade-in">
-      <div class="risk-card">
-        <span class="risk-icon">💀</span>
-        <h4>Shell Access = Root</h4>
-        <p>An agent with <code>exec()</code> can run anything. Install packages, delete files, exfiltrate data. No guardrails.</p>
-      </div>
-      <div class="risk-card">
-        <span class="risk-icon">📧</span>
-        <h4>Credential Theft</h4>
-        <p>API keys in environment variables? The agent can read them. And send them anywhere.</p>
-      </div>
-      <div class="risk-card">
-        <span class="risk-icon">💸</span>
-        <h4>Financial Risk</h4>
-        <p>Stripe keys, bank APIs, payment webhooks. One bad tool call could cost real money.</p>
-      </div>
-      <div class="risk-card">
-        <span class="risk-icon">🔓</span>
-        <h4>Bypassable Controls</h4>
-        <p>Framework-level "approval" lives in the same process as the agent. It can be skipped programmatically.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== HOW IT WORKS ==================== -->
-<section class="section" id="how-it-works">
+<section class="section" id="architecture">
   <div class="container">
     <div class="fade-in">
-      <span class="section-label">How It Works</span>
-      <h2 class="section-title">Network-level <span class="gradient-text">agent containment</span></h2>
-      <p class="section-desc">ACP sits between your agent and the real world. Every sensitive action requires your explicit approval. The agent can't bypass it — tool calls are intercepted at the proxy level.</p>
+      <span class="section-label">Architecture</span>
+      <h2 class="section-title">VM-first in <span class="gradient-text">v0.3.0</span></h2>
+      <p class="section-desc">ACP runs as a host process, OpenClaw runs as a non-root Linux user, and nftables restricts outbound traffic to the ACP mediation path.</p>
     </div>
 
     <div class="flow-diagram fade-in">
-      <div class="flow-node">🤖 Agent</div>
+      <div class="flow-node">OpenClaw (uid)</div>
       <span class="flow-arrow">→</span>
-      <div class="flow-node highlight">🛡️ ACP Proxy</div>
+      <div class="flow-node highlight">ACP Proxy + Policy</div>
       <span class="flow-arrow">→</span>
-      <div class="flow-node">📱 Human Approval</div>
+      <div class="flow-node">Consent Channel</div>
       <span class="flow-arrow">→</span>
-      <div class="flow-node">⚡ Real Tools</div>
+      <div class="flow-node">Allow / Deny</div>
     </div>
 
     <div class="steps-grid fade-in">
       <div class="step-card">
         <span class="step-number">1</span>
-        <h4>Wrap Your Agent</h4>
-        <p>ACP creates a sandboxed environment. Your agent runs inside it with no direct access to credentials or network.</p>
+        <h4>Enforce egress</h4>
+        <p>nftables rules scoped to the OpenClaw user block direct outbound traffic and allow loopback proxy mediation.</p>
       </div>
       <div class="step-card">
         <span class="step-number">2</span>
-        <h4>Get Notified</h4>
-        <p>When the agent tries something sensitive — shell commands, API calls, file writes — you get a Telegram notification with full context.</p>
+        <h4>Gate decisions</h4>
+        <p>ACP policy decides allow, ask, or deny. Ask decisions require explicit human consent.</p>
       </div>
       <div class="step-card">
         <span class="step-number">3</span>
-        <h4>Approve or Deny</h4>
-        <p>One tap on your phone. The agent waits for your decision. No approval = no execution. It's that simple.</p>
-      </div>
-    </div>
-
-    <!-- Telegram Mockup -->
-    <div class="telegram-mockup fade-in">
-      <div class="tg-header">
-        <div class="tg-avatar">A</div>
-        <div class="tg-header-text">
-          <h5>ACP Agent Control</h5>
-          <span>bot · online</span>
-        </div>
-      </div>
-      <div class="tg-body">
-        <div class="tg-message">
-          <span class="tg-bold">🔔 Action Requires Approval</span><br><br>
-          <span class="tg-bold">Tool:</span> <code>exec</code><br>
-          <span class="tg-bold">Command:</span> <code>rm -rf ./build && deploy.sh prod</code><br>
-          <span class="tg-bold">Risk:</span> ⚠️ High<br>
-          <span class="tg-bold">Agent:</span> claude-dev-agent<br><br>
-          <span style="color: #8b949e;">Tap below to approve or deny this action.</span>
-        </div>
-        <div class="tg-buttons">
-          <div class="tg-btn tg-btn-approve">✓ Approve</div>
-          <div class="tg-btn tg-btn-deny">✕ Deny</div>
-        </div>
+        <h4>Audit outcomes</h4>
+        <p>Decisions are written to audit JSONL with action metadata and verdict details.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== COMPARISON ==================== -->
-<section class="section" id="comparison">
-  <div class="container">
-    <div class="fade-in">
-      <span class="section-label">Why ACP</span>
-      <h2 class="section-title">Not another <span class="gradient-text">framework plugin</span></h2>
-      <p class="section-desc">ACP works at the infrastructure level. It doesn't care what framework, language, or model you use.</p>
-    </div>
-
-    <div class="comparison-wrapper fade-in">
-      <table class="comparison-table">
-        <thead>
-          <tr>
-            <th>Feature</th>
-            <th>LangGraph</th>
-            <th>CrewAI</th>
-            <th>MCP</th>
-            <th>ACP</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Works with any agent</td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="check">✓</span></td>
-          </tr>
-          <tr>
-            <td>Agent can bypass</td>
-            <td><span class="cross">Yes</span></td>
-            <td><span class="cross">Yes</span></td>
-            <td><span class="na">N/A</span></td>
-            <td><span class="check">No</span></td>
-          </tr>
-          <tr>
-            <td>Network enforced</td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="check">✓</span></td>
-          </tr>
-          <tr>
-            <td>Needs code changes</td>
-            <td><span class="cross">Yes</span></td>
-            <td><span class="cross">Yes</span></td>
-            <td><span class="cross">Yes</span></td>
-            <td><span class="check">No</span></td>
-          </tr>
-          <tr>
-            <td>Credential isolation</td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="cross">✕</span></td>
-            <td><span class="check">✓</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== PROGRESSIVE COMPLEXITY ==================== -->
-<section class="section" id="levels">
-  <div class="container">
-    <div class="fade-in">
-      <span class="section-label">Progressive Complexity</span>
-      <h2 class="section-title">Start simple. <span class="gradient-text">Scale when ready.</span></h2>
-      <p class="section-desc">From zero-config to production hardening in three levels.</p>
-    </div>
-
-    <div class="levels-grid fade-in">
-      <div class="level-card">
-        <span class="level-badge l1">Level 1</span>
-        <h4>Try It</h4>
-        <p class="level-time">30 seconds</p>
-        <p>Interactive terminal prompts. Zero configuration. Just wrap your command and approve in the terminal.</p>
-        <ul class="level-features">
-          <li>Zero config needed</li>
-          <li>Terminal-based approval</li>
-          <li>Works immediately</li>
-        </ul>
-      </div>
-      <div class="level-card">
-        <span class="level-badge l2">Level 2</span>
-        <h4>Mobile Approval</h4>
-        <p class="level-time">2 minutes</p>
-        <p>Connect Telegram. Approve actions from your phone. One environment variable to set up.</p>
-        <ul class="level-features">
-          <li>Telegram integration</li>
-          <li>Approve from anywhere</li>
-          <li>Rich action context</li>
-        </ul>
-      </div>
-      <div class="level-card">
-        <span class="level-badge l3">Level 3</span>
-        <h4>Production</h4>
-        <p class="level-time">10 minutes</p>
-        <p>Full network isolation. Credential vault. Audit trail. Policy engine. Enterprise-ready.</p>
-        <ul class="level-features">
-          <li>Network isolation</li>
-          <li>Credential vault</li>
-          <li>Custom policies &amp; audit trail</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== SETUP ==================== -->
 <section class="section" id="setup">
   <div class="container">
     <div class="fade-in">
-      <span class="section-label">Quick Start</span>
-      <h2 class="section-title">Up and running in <span class="gradient-text">60 seconds</span></h2>
+      <span class="section-label">Setup</span>
+      <h2 class="section-title">Install in <span class="gradient-text">three commands</span></h2>
+      <p class="section-desc">Host prerequisite (once): <code>sudo apt-get update -y && sudo apt-get install -y nftables build-essential</code></p>
     </div>
 
     <div class="setup-steps fade-in">
       <div class="setup-step">
         <span class="setup-step-num">1</span>
         <div class="setup-step-content">
-          <h4>Install</h4>
+          <h4>Install ACP</h4>
           <div class="code-block">
             <div class="code-header">
               <span class="code-lang">bash</span>
-              <button class="copy-btn" data-target="setup-code-1">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                Copy
-              </button>
+              <button class="copy-btn" data-target="setup-code-1">Copy</button>
             </div>
-            <div class="code-body"><pre id="setup-code-1"><span class="syn-prompt">$</span> npm install -g agent-2fa</pre></div>
+            <div class="code-body"><pre id="setup-code-1">npm install -g agent-2fa</pre></div>
           </div>
         </div>
       </div>
@@ -321,16 +135,13 @@
       <div class="setup-step">
         <span class="setup-step-num">2</span>
         <div class="setup-step-content">
-          <h4>Initialize with Telegram</h4>
+          <h4>Initialize as runtime user</h4>
           <div class="code-block">
             <div class="code-header">
               <span class="code-lang">bash</span>
-              <button class="copy-btn" data-target="setup-code-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                Copy
-              </button>
+              <button class="copy-btn" data-target="setup-code-2">Copy</button>
             </div>
-            <div class="code-body"><pre id="setup-code-2"><span class="syn-prompt">$</span> acp init <span class="syn-flag">--channel=telegram</span></pre></div>
+            <div class="code-body"><pre id="setup-code-2">sudo -u openclaw -H acp init --channel=telegram</pre></div>
           </div>
         </div>
       </div>
@@ -338,181 +149,84 @@
       <div class="setup-step">
         <span class="setup-step-num">3</span>
         <div class="setup-step-content">
-          <h4>Store your secrets</h4>
-          <p>Credentials go in the vault — the agent never sees them directly.</p>
+          <h4>Start VM mode</h4>
           <div class="code-block">
             <div class="code-header">
               <span class="code-lang">bash</span>
-              <button class="copy-btn" data-target="setup-code-3">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                Copy
-              </button>
+              <button class="copy-btn" data-target="setup-code-3">Copy</button>
             </div>
-            <div class="code-body"><pre id="setup-code-3"><span class="syn-prompt">$</span> acp secret set <span class="syn-string">OPENAI_API_KEY=sk-...</span></pre></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="setup-step">
-        <span class="setup-step-num">4</span>
-        <div class="setup-step-content">
-          <h4>Run your agent</h4>
-          <p>Wrap any command. ACP handles the rest.</p>
-          <div class="code-block">
-            <div class="code-header">
-              <span class="code-lang">bash</span>
-              <button class="copy-btn" data-target="setup-code-4">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                Copy
-              </button>
-            </div>
-            <div class="code-body"><pre id="setup-code-4"><span class="syn-prompt">$</span> acp run <span class="syn-flag">--</span> python my_agent.py</pre></div>
+            <div class="code-body"><pre id="setup-code-3">sudo acp start openclaw --openclaw-user=openclaw</pre></div>
           </div>
         </div>
       </div>
     </div>
+
+    <div class="problem-content fade-in" style="margin-top: 48px;">
+      <span class="section-label">Current Limits</span>
+      <p class="section-desc">By default, ACP config under <code>/home/openclaw/.acp</code> is user-writable. For stronger tamper resistance, move config/policy/state to root-owned paths and run a hardened root-owned systemd unit.</p>
+    </div>
   </div>
 </section>
 
-<!-- ==================== AGENT PROMPT ==================== -->
-<section class="section prompt-section" id="agent-prompt">
+<section class="section" id="delta">
   <div class="container">
     <div class="fade-in">
-      <span class="section-label">⭐ The Killer Feature</span>
-      <h2 class="section-title">Make your agent <span class="gradient-text">install its own leash</span></h2>
-      <p class="section-desc">Copy this prompt and paste it into any AI agent with shell access. The agent will install ACP on itself. One paste, and you're in control.</p>
+      <span class="section-label">v0.2 Delta</span>
+      <h2 class="section-title">What changed in <span class="gradient-text">v0.3.0</span></h2>
+      <p class="section-desc">The project now prioritizes Linux VM OpenClaw reliability over broad, generic container-first positioning.</p>
     </div>
 
-    <div class="fade-in">
-      <div class="prompt-tabs">
-        <button class="prompt-tab active" data-group="prompt" data-target="prompt-basic">Basic</button>
-        <button class="prompt-tab" data-group="prompt" data-target="prompt-advanced">Advanced</button>
-      </div>
+    <div class="comparison-wrapper fade-in">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>v0.2</th>
+            <th>v0.3.0</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Primary deployment</td>
+            <td>Generic/earlier model</td>
+            <td>Linux VM + OpenClaw</td>
+          </tr>
+          <tr>
+            <td>Main enforcement focus</td>
+            <td>Mixed model</td>
+            <td>VM egress mediation</td>
+          </tr>
+          <tr>
+            <td>Docker contain path</td>
+            <td>Primary story</td>
+            <td>Legacy compatibility</td>
+          </tr>
+          <tr>
+            <td>Cross-platform expectation</td>
+            <td>Broader</td>
+            <td>Linux-first</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-      <div class="prompt-box">
-        <div class="prompt-header">
-          <h4>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-            Agent Setup Prompt
-          </h4>
-          <button class="copy-btn" data-target="prompt-basic-text" data-group="prompt">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            Copy Prompt
-          </button>
-        </div>
-
-        <div class="prompt-content" data-group="prompt" id="prompt-basic" style="display:block;">
-          <div class="prompt-body" id="prompt-basic-text">I need you to install and configure ACP (Agent Consent Protocol) on this system. ACP adds human approval to your tool calls so I can authorize sensitive actions.
-
-Steps:
-1. Run: npm install -g agent-2fa
-2. Run: acp init --channel=telegram
-3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
-4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>
-5. Verify it works: acp run -- echo "ACP is working"
-6. Now configure ACP to wrap your main process. Update your startup command to:
-   acp run -- <span class="placeholder">[your current startup command]</span>
-
-After this, any sensitive tool calls you make will require my approval via Telegram before executing. Tool calls are intercepted at the proxy level before reaching real tools.
-
-Test it by trying to run a shell command. I should receive an approval request on Telegram.</div>
-        </div>
-
-        <div class="prompt-content" data-group="prompt" id="prompt-advanced" style="display:none;">
-          <div class="prompt-body" id="prompt-advanced-text">Install ACP and configure it with network isolation:
-
-1. npm install -g agent-2fa
-2. acp init --channel=telegram --network-isolation
-3. When prompted for bot token, use: <span class="placeholder">[YOUR BOT TOKEN]</span>
-4. When prompted for chat ID, use: <span class="placeholder">[YOUR CHAT ID]</span>
-5. Store sensitive credentials:
-   acp secret set GITHUB_TOKEN=<span class="placeholder">[YOUR TOKEN]</span>
-   acp secret set OPENAI_API_KEY=<span class="placeholder">[YOUR KEY]</span>
-6. Apply strict policy: acp policy apply strict
-7. Wrap your process:
-   acp run --network-isolation -- <span class="placeholder">[your command]</span>
-8. Verify by calling any tool — I must approve it on Telegram first.
-
-After this, you operate under full network isolation. All credentials are in the ACP vault — you cannot access them directly. Every sensitive action requires my approval. This is non-negotiable and cannot be bypassed.</div>
-        </div>
-      </div>
+    <div class="cta-group" style="margin-top: 28px; justify-content: flex-start;">
+      <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/docs/v0.2-to-v0.3.0.md" target="_blank" rel="noreferrer" class="btn btn-secondary">Full Delta Notes</a>
+      <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/docs/INSTALL-v0.3.0-vm-openclaw.md" target="_blank" rel="noreferrer" class="btn btn-secondary">Install Runbook</a>
     </div>
   </div>
 </section>
 
-<!-- ==================== POLICY ==================== -->
-<section class="section" id="policy">
-  <div class="container">
-    <div class="fade-in">
-      <span class="section-label">Policy Engine</span>
-      <h2 class="section-title">Fine-grained <span class="gradient-text">control rules</span></h2>
-      <p class="section-desc">Define exactly what your agent can and can't do. Allow reads, gate shell access, block financial actions — all in a simple YAML config.</p>
-    </div>
-
-    <div class="policy-grid fade-in">
-      <div class="code-block" style="margin:0;">
-        <div class="code-header">
-          <span class="code-lang">yaml — acp-policy.yml</span>
-          <button class="copy-btn" data-target="policy-code">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            Copy
-          </button>
-        </div>
-        <div class="code-body">
-<pre id="policy-code"><span class="syn-key">default_action</span>: <span class="syn-value">ask</span>
-
-<span class="syn-key">rules</span>:
-  - <span class="syn-key">match</span>: { <span class="syn-key">category</span>: <span class="syn-value">read</span> }
-    <span class="syn-key">action</span>: <span class="syn-string">allow</span>
-
-  - <span class="syn-key">match</span>: { <span class="syn-key">tool</span>: <span class="syn-value">exec</span> }
-    <span class="syn-key">action</span>: <span class="syn-value">ask</span>
-    <span class="syn-key">level</span>: <span class="syn-value">high</span>
-
-  - <span class="syn-key">match</span>: { <span class="syn-key">category</span>: <span class="syn-value">financial</span> }
-    <span class="syn-key">action</span>: <span class="syn-string">deny</span></pre>
-        </div>
-      </div>
-
-      <div class="policy-explanation">
-        <h4>How policies work</h4>
-        <p>ACP evaluates rules top-to-bottom. The first matching rule wins. Unmatched actions fall through to the default.</p>
-        <ul class="policy-list">
-          <li>
-            <span class="policy-icon" style="color: var(--success);">✓</span>
-            <span><strong>allow</strong> — Action executes immediately, no prompt</span>
-          </li>
-          <li>
-            <span class="policy-icon" style="color: var(--warning);">⚠</span>
-            <span><strong>ask</strong> — You get a notification and must approve</span>
-          </li>
-          <li>
-            <span class="policy-icon" style="color: var(--danger);">✕</span>
-            <span><strong>deny</strong> — Blocked unconditionally. Agent gets an error.</span>
-          </li>
-        </ul>
-        <p style="margin-top: 16px;">Combine with <code>level: high</code> to require extra confirmation for dangerous operations.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== FOOTER ==================== -->
 <footer>
   <div class="container">
     <div class="footer-inner">
       <div class="footer-links">
-        <a href="https://github.com/o1100/Agent-Consent-Protocol" target="_blank">GitHub</a>
-        <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/main/README.md" target="_blank">Docs</a>
-        <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/main/SPEC.md" target="_blank">Spec</a>
-        <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/main/CONTRIBUTING.md" target="_blank">Contributing</a>
+        <a href="https://github.com/o1100/Agent-Consent-Protocol" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/docs/how-it-works.md" target="_blank" rel="noreferrer">How it works</a>
+        <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/docs/integration-guide.md" target="_blank" rel="noreferrer">Integration</a>
+        <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/docs/policy-reference.md" target="_blank" rel="noreferrer">Policy</a>
       </div>
-      <div class="footer-meta">
-        Apache 2.0 — Built by the open source community
-        <span class="footer-badge" style="margin-left: 12px;">
-          <img src="https://img.shields.io/github/stars/o1100/Agent-Consent-Protocol?style=flat&color=00d4aa&labelColor=111113" alt="GitHub stars" height="20">
-        </span>
-      </div>
+      <div class="footer-meta">ACP v0.3.0 · Linux VM-first OpenClaw mode</div>
     </div>
   </div>
 </footer>

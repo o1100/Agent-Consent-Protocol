@@ -1,14 +1,13 @@
 {
   "name": "agent-2fa",
-  "version": "0.2.4",
-  "description": "2FA for AI Agents — Human authorization for any agentic system. Network-enforced, framework-agnostic.",
+  "version": "0.3.0",
+  "description": "2FA for AI Agents — Human consent gating for OpenClaw on Linux VMs with fail-closed egress mediation.",
   "type": "module",
   "bin": {
-    "acp": "./dist/index.js",
-    "agent-2fa": "./dist/index.js"
+    "acp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "test": "tsc && node --test dist/tests/*.test.js",
@@ -23,14 +22,16 @@
     "agent",
     "consent",
     "authorization",
-    "mcp",
     "2fa",
     "sandbox",
+    "openclaw",
+    "linux-vm",
+    "nftables",
     "security",
-    "ed25519",
     "audit",
     "human-in-the-loop",
-    "ai-safety"
+    "ai-safety",
+    "proxy"
   ],
   "author": "Agent Consent Protocol Contributors",
   "license": "Apache-2.0",
@@ -52,6 +53,6 @@
     "typescript": "^5.6.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }
