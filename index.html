@@ -176,6 +176,34 @@
       </div>
     </div>
 
+    <div class="fade-in" style="margin-top: 48px;" id="agent-prompt">
+      <span class="section-label">Agent Setup Prompt</span>
+      <h3 class="section-title" style="font-size: 1.4rem;">Let your agent <span class="gradient-text">install it for you</span></h3>
+      <p class="section-desc">Paste this into any AI coding agent (Claude, Cursor, etc.) connected to your Linux VM.</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">prompt</span>
+          <button class="copy-btn" data-target="agent-prompt-code">Copy</button>
+        </div>
+        <div class="code-body"><pre id="agent-prompt-code">Install ACP (Agent Consent Protocol) v0.3.0 on this Linux VM.
+
+Follow the instructions at:
+https://github.com/o1100/Agent-Consent-Protocol/blob/main/OPENCLAW-INSTALL.md
+
+Summary of steps:
+1. Install host deps: sudo apt-get update -y && sudo apt-get install -y nftables build-essential ca-certificates
+2. Install ACP: sudo npm install -g agent-2fa && acp --version
+3. Create runtime user: sudo useradd -m -s /bin/bash openclaw || true
+4. Configure: sudo -u openclaw -H acp init --channel=telegram
+   (I will provide the Telegram bot token, chat ID, and Anthropic key when prompted)
+5. Start: sudo acp start openclaw --openclaw-user=openclaw
+6. Validate: confirm nftables rules are active, proxy is listening, and OpenClaw gateway is running
+
+If npm install fails with build errors, ensure build-essential is installed.
+Minimum 2 GB RAM+swap required — add swap if needed.</pre></div>
+      </div>
+    </div>
+
     <div class="problem-content fade-in" style="margin-top: 48px;">
       <span class="section-label">Current Limits</span>
       <p class="section-desc">By default, ACP config under <code>/home/openclaw/.acp</code> is user-writable. For stronger tamper resistance, move config/policy/state to root-owned paths and run a hardened root-owned systemd unit.</p>
