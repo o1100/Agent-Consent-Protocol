@@ -136,7 +136,6 @@ async function startOpenClawVm(options: StartOptions): Promise<void> {
   const nodeOptions = buildNodeOptions(
     process.env.NODE_OPTIONS || '',
     [
-      'global-agent/bootstrap',
       prepared.proxyBootstrapPath,
     ]
   );
@@ -153,8 +152,6 @@ async function startOpenClawVm(options: StartOptions): Promise<void> {
     all_proxy: proxyUrl,
     NO_PROXY: '127.0.0.1,localhost',
     no_proxy: '127.0.0.1,localhost',
-    GLOBAL_AGENT_HTTP_PROXY: proxyUrl,
-    GLOBAL_AGENT_HTTPS_PROXY: proxyUrl,
     NODE_OPTIONS: nodeOptions,
     ACP_SANDBOX: '1',
     ACP_VM: '1',
@@ -305,18 +302,7 @@ function prepareOpenClawWorkspace(options: {
       cwd: workspaceDir,
       runAs,
       inheritStdio: true,
-    });
-  }
-
-  const globalAgentDist = path.join(workspaceDir, 'node_modules', 'global-agent', 'dist');
-  if (!fs.existsSync(globalAgentDist)) {
-    console.log('  Installing global-agent@2.2.0...');
-    runCommandAsUser({
-      command: 'npm',
-      args: ['install', 'global-agent@2.2.0'],
-      cwd: workspaceDir,
-      runAs,
-      inheritStdio: true,
+      timeout: 600000,
     });
   }
 
@@ -356,35 +342,96 @@ function prepareOpenClawWorkspace(options: {
   fs.writeFileSync(ocConfigDestPath, JSON.stringify(rawConfig, null, 2) + '\n', 'utf-8');
   chownIfPossible(ocConfigDestPath, runAs.uid, runAs.gid);
 
+  // Self-contained proxy bootstrap using only Node.js built-ins + undici.
+  // Handles three layers:
+  //   1) undici global dispatcher (globalThis.fetch, undici.fetch)
+  //   2) Custom https.Agent that tunnels via CONNECT through the ACP proxy
+  //   3) Monkey-patch https.request/https.get to force proxy agent
   const proxyBootstrap = [
+    "'use strict';",
     'try {',
-    "  const undici = require('undici');",
-    "  const { ProxyAgent, setGlobalDispatcher } = undici;",
     "  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;",
-    '  const stripDispatcher = (init) => {',
-    "    if (!init || typeof init !== 'object' || !Object.prototype.hasOwnProperty.call(init, 'dispatcher')) return init;",
-    "    const cloned = { ...init };",
-    "    delete cloned.dispatcher;",
-    '    return cloned;',
+    '  if (!proxy) throw new Error("no proxy configured");',
+    '  const proxyUrl = new URL(proxy);',
+    '  const proxyHost = proxyUrl.hostname;',
+    '  const proxyPort = parseInt(proxyUrl.port || "8080", 10);',
+    '',
+    '  // --- Layer 1: undici global dispatcher ---',
+    '  try {',
+    "    const undici = require('undici');",
+    '    undici.setGlobalDispatcher(new undici.ProxyAgent(proxy));',
+    '  } catch (_) {}',
+    '',
+    '  // --- Layer 2: custom CONNECT-tunnel agent for https ---',
+    "  const http = require('http');",
+    "  const https = require('https');",
+    "  const tls = require('tls');",
+    '',
+    '  class AcpProxyAgent extends https.Agent {',
+    '    constructor() {',
+    '      super({ keepAlive: true });',
+    '    }',
+    '    createConnection(opts, cb) {',
+    '      const targetHost = opts.host || opts.hostname;',
+    '      const targetPort = opts.port || 443;',
+    '      const connectReq = http.request({',
+    '        host: proxyHost,',
+    '        port: proxyPort,',
+    "        method: 'CONNECT',",
+    '        path: targetHost + ":" + targetPort,',
+    '      });',
+    "      connectReq.on('connect', function(res, socket) {",
+    '        if (res.statusCode === 200) {',
+    '          const tlsSocket = tls.connect({',
+    '            socket: socket,',
+    '            servername: targetHost,',
+    '          });',
+    '          cb(null, tlsSocket);',
+    '        } else {',
+    '          socket.destroy();',
+    '          cb(new Error("CONNECT " + targetHost + ":" + targetPort + " failed: " + res.statusCode));',
+    '        }',
+    '      });',
+    "      connectReq.on('error', function(err) { cb(err); });",
+    '      connectReq.end();',
+    '    }',
+    '  }',
+    '',
+    '  const acpAgent = new AcpProxyAgent();',
+    '  https.globalAgent = acpAgent;',
+    '',
+    '  // --- Layer 3: force proxy agent on all https calls ---',
+    '  // Libraries like grammY pass explicit agent options which bypass globalAgent.',
+    '  // Monkey-patch https.request/get to replace any custom agent with ours.',
+    '  const origReq = https.request;',
+    '  const origGet = https.get;',
+    '',
+    '  function forceAgent(args) {',
+    '    for (var i = 0; i < args.length; i++) {',
+    "      if (typeof args[i] === 'object' && args[i] !== null && !(args[i] instanceof URL)) {",
+    '        var host = args[i].host || args[i].hostname || "";',
+    '        if (host === "127.0.0.1" || host === "localhost" || host === "::1") continue;',
+    '        if (args[i].agent && args[i].agent !== acpAgent) {',
+    '          args[i] = Object.assign({}, args[i]);',
+    '          args[i].agent = acpAgent;',
+    '        }',
+    '      }',
+    '    }',
+    '    return args;',
+    '  }',
+    '',
+    '  https.request = function() { return origReq.apply(this, forceAgent([...arguments])); };',
+    '  https.get = function() {',
+    '    var req = https.request.apply(this, arguments);',
+    '    req.end();',
+    '    return req;',
     '  };',
-    '  const wrapFetch = (fetchImpl) => {',
-    "    if (typeof fetchImpl !== 'function') return fetchImpl;",
-    "    if (fetchImpl.__acpWrapped) return fetchImpl;",
-    '    const wrapped = (input, init) => fetchImpl(input, stripDispatcher(init));',
-    "    Object.defineProperty(wrapped, '__acpWrapped', { value: true });",
-    '    return wrapped;',
-    '  };',
-    '  if (proxy) {',
-    '    setGlobalDispatcher(new ProxyAgent(proxy));',
-    '  }',
-    "  if (typeof globalThis.fetch === 'function') {",
-    '    globalThis.fetch = wrapFetch(globalThis.fetch);',
-    '  }',
-    "  if (typeof undici.fetch === 'function') {",
-    '    undici.fetch = wrapFetch(undici.fetch);',
-    '  }',
+    '',
+    '  // Note: do NOT strip dispatcher from fetch calls. OpenClaw passes its own',
+    '  // ProxyAgent as a per-request dispatcher, and stripping it causes requests',
+    '  // to fall through to a non-proxy global dispatcher.',
     '} catch (_err) {',
-    '  // Best effort; global-agent still covers many HTTP clients.',
+    '  /* best effort */',
     '}',
     '',
   ].join('\n');
@@ -439,6 +486,7 @@ function runCommandAsUser(options: {
   cwd: string;
   runAs: LinuxUserIdentity;
   inheritStdio: boolean;
+  timeout?: number;
 }): void {
   const { command, args, cwd, runAs, inheritStdio } = options;
   const result = spawnSync(command, args, {
@@ -450,7 +498,7 @@ function runCommandAsUser(options: {
     },
     uid: runAs.uid,
     gid: runAs.gid,
-    timeout: 300000,
+    timeout: options.timeout ?? 300000,
   });
 
   if (result.error) {
