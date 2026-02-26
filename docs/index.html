@@ -66,6 +66,7 @@
 
     <div class="cta-group">
       <a href="#setup" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/main/OPENCLAW-INSTALL.md" target="_blank" rel="noreferrer" class="btn btn-secondary">Agent Setup Prompt</a>
       <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/v0.3.0/README.md" target="_blank" rel="noreferrer" class="btn btn-secondary">Read README</a>
     </div>
   </div>
@@ -113,8 +114,8 @@
   <div class="container">
     <div class="fade-in">
       <span class="section-label">Setup</span>
-      <h2 class="section-title">Install in <span class="gradient-text">three commands</span></h2>
-      <p class="section-desc">Host prerequisite (once): <code>sudo apt-get update -y && sudo apt-get install -y nftables build-essential</code><br>Minimum <strong>2 GB RAM+swap</strong> recommended.</p>
+      <h2 class="section-title">Install in <span class="gradient-text">four commands</span></h2>
+      <p class="section-desc">Host prerequisites (once): <code>sudo apt-get update -y && sudo apt-get install -y nftables build-essential</code><br>Minimum <strong>2 GB RAM+swap</strong> recommended. Or give your agent the <a href="https://github.com/o1100/Agent-Consent-Protocol/blob/main/OPENCLAW-INSTALL.md" target="_blank" rel="noreferrer">Agent Setup Prompt</a>.</p>
     </div>
 
     <div class="setup-steps fade-in">
@@ -135,13 +136,13 @@
       <div class="setup-step">
         <span class="setup-step-num">2</span>
         <div class="setup-step-content">
-          <h4>Initialize as runtime user</h4>
+          <h4>Create runtime user</h4>
           <div class="code-block">
             <div class="code-header">
               <span class="code-lang">bash</span>
               <button class="copy-btn" data-target="setup-code-2">Copy</button>
             </div>
-            <div class="code-body"><pre id="setup-code-2">sudo -u openclaw -H acp init --channel=telegram</pre></div>
+            <div class="code-body"><pre id="setup-code-2">sudo useradd -m -s /bin/bash openclaw || true</pre></div>
           </div>
         </div>
       </div>
@@ -149,13 +150,27 @@
       <div class="setup-step">
         <span class="setup-step-num">3</span>
         <div class="setup-step-content">
-          <h4>Start VM mode</h4>
+          <h4>Initialize consent channel</h4>
           <div class="code-block">
             <div class="code-header">
               <span class="code-lang">bash</span>
               <button class="copy-btn" data-target="setup-code-3">Copy</button>
             </div>
-            <div class="code-body"><pre id="setup-code-3">sudo acp start openclaw --openclaw-user=openclaw</pre></div>
+            <div class="code-body"><pre id="setup-code-3">sudo -u openclaw -H acp init --channel=telegram</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="setup-step">
+        <span class="setup-step-num">4</span>
+        <div class="setup-step-content">
+          <h4>Start VM mode</h4>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">bash</span>
+              <button class="copy-btn" data-target="setup-code-4">Copy</button>
+            </div>
+            <div class="code-body"><pre id="setup-code-4">sudo acp start openclaw --openclaw-user=openclaw</pre></div>
           </div>
         </div>
       </div>
