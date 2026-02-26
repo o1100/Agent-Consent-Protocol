@@ -8,6 +8,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
@@ -42,6 +43,29 @@ interface StartOptions {
 const PRESETS: Record<string, true> = {
   openclaw: true,
 };
+
+function warnIfLowMemory(): void {
+  const MIN_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
+  const ramBytes = os.totalmem();
+  let swapBytes = 0;
+  try {
+    const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
+    const match = meminfo.match(/SwapTotal:\s+(\d+)\s+kB/);
+    if (match) swapBytes = Number(match[1]) * 1024;
+  } catch {
+    // /proc/meminfo unavailable (non-Linux) — skip swap check
+  }
+  const totalBytes = ramBytes + swapBytes;
+  if (totalBytes < MIN_BYTES) {
+    const totalMb = Math.round(totalBytes / (1024 * 1024));
+    console.warn('');
+    console.warn(`  Warning: RAM+swap is only ${totalMb} MB (2048 MB recommended).`);
+    console.warn('  OpenClaw may fail to install or run. Consider adding swap:');
+    console.warn('    sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile');
+    console.warn('    sudo mkswap /swapfile && sudo swapon /swapfile');
+    console.warn('');
+  }
+}
 
 export async function startCommand(
   preset: string,
@@ -295,6 +319,7 @@ function prepareOpenClawWorkspace(options: {
     });
   }
   if (!fs.existsSync(ocBin)) {
+    warnIfLowMemory();
     console.log('  Installing openclaw@latest...');
     runCommandAsUser({
       command: 'npm',
@@ -342,12 +367,58 @@ function prepareOpenClawWorkspace(options: {
   fs.writeFileSync(ocConfigDestPath, JSON.stringify(rawConfig, null, 2) + '\n', 'utf-8');
   chownIfPossible(ocConfigDestPath, runAs.uid, runAs.gid);
 
-  // Self-contained proxy bootstrap using only Node.js built-ins + undici.
-  // Handles three layers:
-  //   1) undici global dispatcher (globalThis.fetch, undici.fetch)
-  //   2) Custom https.Agent that tunnels via CONNECT through the ACP proxy
-  //   3) Monkey-patch https.request/https.get to force proxy agent
-  const proxyBootstrap = [
+  fs.writeFileSync(proxyBootstrapPath, generateProxyBootstrapCode(), 'utf-8');
+  chownIfPossible(proxyBootstrapPath, runAs.uid, runAs.gid);
+
+  if (fs.existsSync(setupTokenPath)) {
+    try {
+      const setupToken = fs.readFileSync(setupTokenPath, 'utf-8').trim();
+      if (setupToken) {
+        const agentsRootDir = path.join(ocConfigDestDir, 'agents');
+        const agentMainDir = path.join(agentsRootDir, 'main');
+        const agentDir = path.join(agentMainDir, 'agent');
+        const authStorePath = path.join(agentDir, 'auth-profiles.json');
+        fs.mkdirSync(agentDir, { recursive: true });
+        chownIfPossible(agentsRootDir, runAs.uid, runAs.gid);
+        chownIfPossible(agentMainDir, runAs.uid, runAs.gid);
+        chownIfPossible(agentDir, runAs.uid, runAs.gid);
+        let store: { version: number; profiles: Record<string, unknown> } = { version: 1, profiles: {} };
+        try {
+          store = JSON.parse(fs.readFileSync(authStorePath, 'utf-8')) as { version: number; profiles: Record<string, unknown> };
+          if (!store.profiles || typeof store.profiles !== 'object') {
+            store = { version: 1, profiles: {} };
+          }
+        } catch {
+          store = { version: 1, profiles: {} };
+        }
+
+        const isSetupToken = setupToken.startsWith('sk-ant-oat01-');
+        store.profiles['anthropic:manual'] = {
+          type: isSetupToken ? 'setup_token' : 'api_key',
+          provider: 'anthropic',
+          key: setupToken,
+        };
+
+        fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + '\n', {
+          mode: 0o600,
+        });
+        chownIfPossible(authStorePath, runAs.uid, runAs.gid);
+        console.log('  Imported Claude setup-token into OpenClaw auth profiles.');
+      }
+    } catch (err) {
+      console.error(`  Warning: failed to import setup-token: ${(err as Error).message}`);
+    }
+  }
+
+  return { forwardEnv, proxyBootstrapPath };
+}
+
+/**
+ * Generate the proxy bootstrap JS code injected via --require.
+ * Exported for testability.
+ */
+export function generateProxyBootstrapCode(): string {
+  return [
     "'use strict';",
     'try {',
     "  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;",
@@ -401,8 +472,6 @@ function prepareOpenClawWorkspace(options: {
     '  https.globalAgent = acpAgent;',
     '',
     '  // --- Layer 3: force proxy agent on all https calls ---',
-    '  // Libraries like grammY pass explicit agent options which bypass globalAgent.',
-    '  // Monkey-patch https.request/get to replace any custom agent with ours.',
     '  const origReq = https.request;',
     '  const origGet = https.get;',
     '',
@@ -428,9 +497,6 @@ function prepareOpenClawWorkspace(options: {
     '  };',
     '',
     '  // --- Layer 4: ensure undici.fetch/globalThis.fetch use proxy by default ---',
-    '  // OpenClaw overrides the undici global dispatcher (for autoSelectFamily),',
-    '  // so we wrap fetch to inject our ProxyAgent when no dispatcher is specified.',
-    '  // Calls with an explicit dispatcher (like OpenClaw\'s proxyFetch) are left alone.',
     '  try {',
     "    const undici = require('undici');",
     '    const proxyDispatcher = new undici.ProxyAgent(proxy);',
@@ -453,49 +519,6 @@ function prepareOpenClawWorkspace(options: {
     '}',
     '',
   ].join('\n');
-  fs.writeFileSync(proxyBootstrapPath, proxyBootstrap, 'utf-8');
-  chownIfPossible(proxyBootstrapPath, runAs.uid, runAs.gid);
-
-  if (fs.existsSync(setupTokenPath)) {
-    try {
-      const setupToken = fs.readFileSync(setupTokenPath, 'utf-8').trim();
-      if (setupToken) {
-        const agentsRootDir = path.join(ocConfigDestDir, 'agents');
-        const agentMainDir = path.join(agentsRootDir, 'main');
-        const agentDir = path.join(agentMainDir, 'agent');
-        const authStorePath = path.join(agentDir, 'auth-profiles.json');
-        fs.mkdirSync(agentDir, { recursive: true });
-        chownIfPossible(agentsRootDir, runAs.uid, runAs.gid);
-        chownIfPossible(agentMainDir, runAs.uid, runAs.gid);
-        chownIfPossible(agentDir, runAs.uid, runAs.gid);
-        let store: { version: number; profiles: Record<string, unknown> } = { version: 1, profiles: {} };
-        try {
-          store = JSON.parse(fs.readFileSync(authStorePath, 'utf-8')) as { version: number; profiles: Record<string, unknown> };
-          if (!store.profiles || typeof store.profiles !== 'object') {
-            store = { version: 1, profiles: {} };
-          }
-        } catch {
-          store = { version: 1, profiles: {} };
-        }
-
-        store.profiles['anthropic:manual'] = {
-          type: 'api_key',
-          provider: 'anthropic',
-          key: setupToken,
-        };
-
-        fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + '\n', {
-          mode: 0o600,
-        });
-        chownIfPossible(authStorePath, runAs.uid, runAs.gid);
-        console.log('  Imported Claude setup-token into OpenClaw auth profiles.');
-      }
-    } catch (err) {
-      console.error(`  Warning: failed to import setup-token: ${(err as Error).message}`);
-    }
-  }
-
-  return { forwardEnv, proxyBootstrapPath };
 }
 
 function runCommandAsUser(options: {

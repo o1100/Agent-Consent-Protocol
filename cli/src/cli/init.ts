@@ -144,6 +144,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   } else if (options.channel === 'webhook') {
     const url = await prompt.ask('  Webhook URL: ');
+    if (!url) {
+      prompt.close();
+      console.error('  Webhook URL is required.');
+      process.exit(1);
+    }
     const secret = await prompt.ask('  Webhook Secret (optional): ');
 
     config.webhook = {
@@ -283,19 +288,24 @@ async function setupOpenClaw(
   let tokenMode: 'api' | 'setup' | 'oauth' | null = null;
 
   if (hasAnthropicToken) {
-    console.log('  What type of Anthropic auth is this?');
-    console.log('  - API key: from Anthropic Console (recommended for servers)');
-    console.log('  - Setup-token: from `claude setup-token` (Claude subscription)');
-    console.log('  - OAuth token: advanced (rare; may not work for Claude subscription)');
-    const modeAnswer = await prompt.ask('  Use as [A]PI key, [S]etup-token, or [O]Auth token? (default: API) ');
-    if (modeAnswer.toLowerCase().startsWith('s')) {
+    if (looksLikeClaudeToken) {
       tokenMode = 'setup';
-    } else if (modeAnswer.toLowerCase().startsWith('o')) {
-      tokenMode = 'oauth';
+      console.log('  Detected sk-ant-oat01- prefix → auto-selecting setup-token mode.');
     } else {
-      tokenMode = 'api';
+      console.log('  What type of Anthropic auth is this?');
+      console.log('  - API key: from Anthropic Console (recommended for servers)');
+      console.log('  - Setup-token: from `claude setup-token` (Claude subscription)');
+      console.log('  - OAuth token: advanced (rare; may not work for Claude subscription)');
+      const modeAnswer = await prompt.ask('  Use as [A]PI key, [S]etup-token, or [O]Auth token? (default: API) ');
+      if (modeAnswer.toLowerCase().startsWith('s')) {
+        tokenMode = 'setup';
+      } else if (modeAnswer.toLowerCase().startsWith('o')) {
+        tokenMode = 'oauth';
+      } else {
+        tokenMode = 'api';
+      }
     }
-    if (looksLikeClaudeToken && tokenMode === 'api') {
+    if (tokenMode === 'api') {
       console.log('  Using token as ANTHROPIC_API_KEY (API key mode).');
     }
     if (tokenMode === 'setup') {

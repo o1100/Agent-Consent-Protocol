@@ -128,6 +128,11 @@ export function installEgressRules(options: EgressPolicyOptions): void {
       stdio: 'pipe',
       timeout: 10000,
     });
+  } catch (err) {
+    const stderr = (err as { stderr?: Buffer })?.stderr?.toString().trim();
+    throw new Error(
+      `Failed to install nftables egress rules${stderr ? `: ${stderr}` : ''}`
+    );
   } finally {
     try {
       fs.unlinkSync(filePath);

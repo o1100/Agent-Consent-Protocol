@@ -40,6 +40,12 @@ At runtime ACP:
 
 ## Quick Start (Linux VM)
 
+> Minimum: **2 GB RAM+swap** recommended. If your VM has less, add swap first:
+> ```bash
+> sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+> sudo mkswap /swapfile && sudo swapon /swapfile
+> ```
+
 ```bash
 # 0) One-time host prerequisites
 sudo apt-get update -y

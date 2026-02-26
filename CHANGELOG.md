@@ -2,35 +2,32 @@
 
 ## v0.3.0
 
-## Net Direction
+### Direction
 
 `v0.3.0` narrows scope to make OpenClaw-on-Linux-VM deployments simpler and more reliable.
 
-## What v0.3.0 Adds / Improves
+### Added
 
-1. VM-first startup path for OpenClaw (`acp start openclaw`)
-2. nftables user-level egress enforcement in Linux VM mode
-3. Single-command OpenClaw workspace bootstrap in VM mode
-4. Improved consent-channel behavior and delivery handling
-5. Host approval cache for repeated HTTP host approvals (short TTL)
+- **VM-first startup** — `acp start openclaw` bootstraps OpenClaw on a Linux VM without Docker
+- **nftables egress enforcement** — per-user fail-closed outbound rules; only the ACP proxy port is allowed
+- **Proxy bootstrap rewrite** — self-contained 4-layer JS bootstrap (`--require`): undici global dispatcher, CONNECT-tunnel agent, https monkey-patch, and fetch wrapper
+- **Token auto-detection** — `sk-ant-oat01-` tokens are automatically recognized as setup-tokens in `acp init`
+- **Auth-profiles type fix** — setup-tokens are stored as `type: 'setup_token'` (not `api_key`) in OpenClaw auth profiles
+- **Memory/swap warning** — `acp start` warns if RAM+swap < 2 GB before installing OpenClaw
+- **nftables stderr capture** — `installEgressRules` includes `nft` stderr in thrown errors for easier debugging
+- **Webhook URL validation** — `acp init --channel=webhook` rejects empty webhook URLs
+- **Host approval cache** — short-TTL cache for repeated HTTP host approvals in the consent gate
+- **HTTP CONNECT tunneling tests** — new test suite for allowed/denied/failed CONNECT proxy paths
+- **Proxy bootstrap syntax tests** — validates generated bootstrap JS via `vm.Script`, checks all 4 layers
 
-## What You Lose vs v0.2
+### Changed
 
-1. Less emphasis on generic, framework-agnostic "run anything anywhere" story
-2. Docker-contained mode is no longer the primary architecture
-3. Cross-platform expectations (macOS/Windows parity) are reduced for the main path
-4. Features discussed in earlier docs but not implemented in current repo state (for example first-class credential vault semantics) are not part of the v0.3.0 primary path
+- Docker-contained mode (`acp contain`) is still available but is no longer the primary architecture
+- Cross-platform expectations reduced; primary path is Linux VM only
+- OpenClaw workspace bootstrap is single-command (`acp start openclaw`)
 
-## What Is Still Present But Secondary
+### Security Notes
 
-1. `acp contain` Docker compatibility command
-2. shell-wrapper concepts used by Docker containment mode
-
-## Security Tradeoff to Be Aware Of
-
-- VM mode currently prioritizes network mediation reliability.
-- Default config location under user home means policy/config tampering by the runtime user is still possible unless operators harden file ownership/layout.
-
-## Recommended Next Hardening Step
-
-Move runtime policy/config/state to root-owned paths and run ACP under root-owned systemd units as the default installation profile.
+- VM mode prioritizes network mediation reliability
+- Default config under user home means policy/config tampering is possible unless operators harden file ownership
+- Recommended: move policy/config/state to root-owned paths and run ACP under systemd
